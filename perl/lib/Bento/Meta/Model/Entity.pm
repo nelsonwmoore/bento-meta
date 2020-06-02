@@ -2,11 +2,14 @@ package Bento::Meta::Model::Entity;
 use Bento::Meta::Model::ObjectMap;
 use UUID::Tiny qw/:std/;
 use Scalar::Util qw/blessed/;
+use Clone qw/clone/;
+use Acme::Damn;
 use Log::Log4perl qw/:easy/;
 
 use strict;
 our $OBJECT_MAP;
 our $AUTOLOAD;
+our $VERSIONING_ON=0;
 
 our @private_attr = qw/
 _dirty
@@ -25,6 +28,11 @@ sub new {
   $self->{pvt}{_removed_entities} = []; # stash removed things here
   $self->{_desc} = undef; # free text description for entity
   $self->{_id} = undef; # unique identifier across entities
+  
+  $self->{__from} = undef; # monotonic versioning : _from
+  $self->{__to} = undef; # monotonic versioning : _to
+  $self->{__prev} = \undef; # link to prev version
+  $self->{__next} = \undef; # link to next version
 
   my @declared_atts = map { my ($a)=/^_(.*)/;$a || () } keys %$self;
   $self->{_declared} = \@declared_atts;
@@ -104,95 +112,16 @@ sub AUTOLOAD {
   if (grep /^$method$/, @{$self->{_declared}}) {
     my $att = $self->{"_$method"};
     if (!$action) { # getter
-      for (ref $att) {
-        /^ARRAY$/ && do {
-          return @$att;
-        };
-        /^HASH$/ && do {
-          if ($args[0]) {
-            if (blessed $att->{$args[0]} and
-                  $att->{$args[0]}->dirty < 0) {
-              $att->{$args[0]}->get;
-            }
-            return $att->{$args[0]};
-          }
-          else {
-            return wantarray ? values %$att : $att;
-          }
-        };
-        /^SCALAR$/ && do {
-          return $$att; # this picks up \undef (unset object property) and returns false
-        };
-        do {
-          $att->get if (blessed $att and ($att->dirty < 0));
-          return $att;
-        };
-      }
+      return $self->get_method($method,@args);
     }
-    elsif ($action eq 'set') { #setter
-      return unless @args;
-      # cache should pick up the changes here
-      ($Bento::Meta::Model::ObjectMap::Cache{$self->neoid} = $self) if $self->neoid;
-      $self->{pvt}{_dirty} = 1;
-      for (ref $att) {
-        /^ARRAY$/ && do {
-          unless (ref $args[0] eq 'ARRAY') {
-            LOGDIE "set_$method requires arrayref as arg1";
-          }
-          return $self->{"_$method"} = $args[0];
-        };
-        /^HASH$/ && do {
-          if (ref $args[0] eq 'HASH') {
-            return $self->{"_$method"} = $args[0];
-          }
-          elsif (!ref($args[0]) && @args > 1) {
-            my $oldval;
-            if ($self->{"_$method"}{$args[0]}) {
-              $oldval = delete $self->{"_$method"}{$args[0]};
-              $self->push_removed_entities("$method:$args[0]" => $oldval);
-            }
-            if (defined $args[1]) {
-              return $self->{"_$method"}{$args[0]} = $args[1];
-            }
-            else { # 2nd arg is explicit undef - means delete
-              return $oldval;
-            }
-          }
-          else {
-            LOGDIE "set_$method requires hashref as arg1, or key => value as arg1 and arg2";
-          }
-        };
-        do { # scalar attribute
-          my $oldval = $self->{"_$method"};
-          if (blessed $oldval) {
-            $self->push_removed_entities("$method" => $oldval);
-          }
-          if (defined $args[0]) {
-            return $self->{"_$method"} = $args[0];
-          }
-          else {
-            # handle clearing an object attribute
-            $self->{"_$method"} = ref($self->{"_$method"}) ? \undef : undef;
-            return $oldval; # value deleted consistent with HASH handler above
-          }
-        };
-      }
+    elsif ($action eq 'set') {
+      return $self->set_method($method,@args);
     }
     elsif ($action eq 'add') {
-      return unless $class->object_map;
-      unless ($self->atype($method) =~ /ARRAY|HASH/) {
-        LOGWARN ref($self)."::add_$method - add action not relevant for this attribute";
-        return;
-      }
-      return $self->add($method, $args[0]);
+      return $self->add_method($method,@args);
     }
     elsif ($action eq 'drop') {
-      return unless $class->object_map;
-      unless ($self->atype($method) =~ /ARRAY|HASH/) {
-        LOGWARN ref($self)."::drop_$method - drop action not relevant for this attribute";
-        return;
-      }
-      return $self->drop($method, $args[0]);
+      return $self->drop_method($method,@args);
     }
     else {
       LOGDIE "Method action '$action' unknown for ".ref($self);
@@ -203,11 +132,51 @@ sub AUTOLOAD {
   }
 }
 
+sub dup {
+  my $self = shift;
+  my $class = ref $self;
+  damn $self;
+  my $duplicate = $class->new($self);
+  bless $self, $class;
+  
+  # creating a shallow copy of the original obj is what we want,
+  # since the object valued attributes will then point to the existing
+  # objects, not newly created, copied objects. When pushed to the db,
+  # this will yield new links, to the existing object from this new,
+  # duplicated one.
+
+  return $duplicate;
+}
+
+sub del {
+  my $self = shift;
+  if ($VERSIONING_ON) {
+    if ($VERSION_COUNT > $self->_from) {
+      $self->set_to($VERSION_COUNT);
+    }
+    else {
+      LOGWARN ref($self)."::del - current version count ($VERSION_COUNT) is less than object's _to attribute (".$self->_to.")";
+      return;
+    }
+  return 1;
+}
+
 sub attrs { @{shift->{_declared}} }
 sub atype { ref shift->{"_".shift} }
 sub name { shift->{_handle} }
 sub neoid { shift->{pvt}{_neoid} }
 sub set_neoid { $_[0]->{pvt}{_neoid} = $_[1] }
+
+sub _next { shift->{__next} }
+sub set_next { $_[0]->{__next} = $_[1] }
+sub _prev { shift->{__prev} }
+sub set_prev { $_[0]->{__prev} = $_[1] }
+
+sub _from { shift->{__from} }
+sub _to { shift->{__to} }
+sub set_from  { $_[0]->{__from} = $_[1] }
+sub set_to  { $_[0]->{__to} = $_[1] }
+
 sub dirty { shift->{pvt}{_dirty} }
 sub set_dirty { $_[0]->{pvt}{_dirty} = $_[1] }
 sub removed_entities { map { $_->[1] } @{shift->{pvt}{_removed_entities}} }
@@ -215,6 +184,122 @@ sub clear_removed_entities { shift->{pvt}{_removed_entities} = [] }
 sub pop_removed_entities { pop @{shift->{pvt}{_removed_entities}} }
 sub push_removed_entities { push @{$_[0]->{pvt}{_removed_entities}},[$_[1] => $_[2]]; $_[2] }
 
+
+sub set_method {
+  my $self = shift;
+  my ($method,@args) = @_;
+  my $att = $self->{"_$method"};
+  return unless @args;
+
+  if ($VERSIONING_ON &&
+        ($VERSION_COUNT < $self->_from)) # 
+    {
+    $dup = $self->dup;
+    # will leave the dup behind as the "old" object...
+    $dup->{prv} = clone $self->{prv};
+    $dup->set_next($self);
+    $self->set_prev($dup);
+    $dup->set_to($VERSION_COUNT);
+    $self->set_neoid(undef);
+    $self->set_from($VERSION_COUNT); #
+  }
+  # cache should pick up the changes here
+  ($Bento::Meta::Model::ObjectMap::Cache{$self->neoid} = $self) if $self->neoid;
+  $self->{pvt}{_dirty} = 1;
+  for (ref $att) {
+    /^ARRAY$/ && do {
+      unless (ref $args[0] eq 'ARRAY') {
+        LOGDIE "set_$method requires arrayref as arg1";
+      }
+      return $self->{"_$method"} = $args[0];
+    };
+    /^HASH$/ && do { 
+      if (ref $args[0] eq 'HASH') { # a hashref
+        return $self->{"_$method"} = $args[0];
+      } elsif (!ref($args[0]) && @args > 1) { # a key
+        my $oldval;
+        if ($self->{"_$method"}{$args[0]}) {
+          $oldval = delete $self->{"_$method"}{$args[0]};
+          $self->push_removed_entities("$method:$args[0]" => $oldval);
+        }
+        if (defined $args[1]) {
+          return $self->{"_$method"}{$args[0]} = $args[1];
+        } else {            # 2nd arg is explicit undef - means delete
+          return $oldval;
+        }
+      } else {
+        LOGDIE "set_$method requires hashref as arg1, or key => value as arg1 and arg2";
+      }
+    };
+    do {                        # else, a scalar attribute
+      my $oldval = $self->{"_$method"};
+      if (blessed $oldval) {    # an object-valued attribute
+        $self->push_removed_entities("$method" => $oldval);
+      }
+      if (defined $args[0]) {   # a scalar-valued attribute
+        return $self->{"_$method"} = $args[0];
+      } else {
+        # handle clearing an object attribute
+        $self->{"_$method"} = ref($self->{"_$method"}) ? \undef : undef;
+        return $oldval; # value deleted consistent with HASH handler above
+      }
+    };
+  }
+}
+
+sub get_method { # getter
+  my $self = shift;
+  my ($method,@args) = @_;
+  my $att = $self->{"_$method"};
+  for (ref $att) {
+    /^ARRAY$/ && do {
+      return @$att;
+    };
+    /^HASH$/ && do {
+      if ($args[0]) {
+        if (blessed $att->{$args[0]} and
+              $att->{$args[0]}->dirty < 0) {
+          $att->{$args[0]}->get;
+        }
+        return $att->{$args[0]};
+      }
+      else {
+        return wantarray ? values %$att : $att;
+      }
+    };
+    /^SCALAR$/ && do {
+      return $$att; # this picks up \undef (unset object property) and returns false
+    };
+    do {
+      $att->get if (blessed $att and ($att->dirty < 0));
+      return $att;
+    };
+  }
+}
+
+sub add_method {
+  my $self = shift;
+  my ($method,@args) = @_;
+  my $class = ref $self;
+  return unless $class->object_map;
+  unless ($self->atype($method) =~ /ARRAY|HASH/) {
+    LOGWARN ref($self)."::add_$method - add action not relevant for this attribute";
+    return;
+  }
+  return $self->add($method, $args[0]);
+}
+
+sub drop_method {
+  my $self = shift;
+  my ($method,@args) = @_;
+  my $class = ref $self;
+  return unless $class->object_map;
+  unless ($self->atype($method) =~ /ARRAY|HASH/) {
+    LOGWARN ref($self)."::drop_$method - drop action not relevant for this attribute";
+    return;
+  }
+  return $self->drop($method, $args[0]);
+}
 
 sub map_defn { LOGWARN ref(shift)."::map_defn - subclass method; not defined for base class"; return; }1;
 sub set_with_node {

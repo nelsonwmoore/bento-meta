@@ -188,7 +188,7 @@ sub del {
     }
   }
   else { # "remove" an object - by unlinking it from other objects
-    my @v = values %{ pop @{$self->{pvt}{_belongs}} };
+    my @v = values %{ $self->{pvt}{_belongs} };
     for my $v ( @v ) {
       my ($obj,$attr,$key) = @$v;
       my $set = "set_$attr";

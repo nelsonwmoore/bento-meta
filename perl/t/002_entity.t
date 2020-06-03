@@ -65,11 +65,16 @@ ok !$val2->{pvt}{_belongs}{"$o".":my_object_attr"}, '_belongs entry removed';
 ok $o->set_my_hash_attr(yet => $val), 'add obj to hash attr at key';
 ok $val->{pvt}{_belongs}{"$o".":my_hash_attr:yet"}, '_belongs entry created';
 is_deeply $val->{pvt}{_belongs}{"$o".":my_hash_attr:yet"}, [$o,'my_hash_attr','yet'], '_belongs entry correct';
-
-
-
 is( ($o->removed_entities)[0], $val2, "entity correct");
 is( $o->pop_removed_entities->[1], $val2, "pop rm entity");
+
+ok $val->set_my_object_attr($o), "set v obj attribute as o";
+ok $val->my_object_attr(), "now you see it (on v)";
+ok $o->del, 'del object o';
+ok !$val->my_object_attr(), "now you don't";
+is( ($val->removed_entities)[0], $o, "o is a removed entity of v");
+
+
 is $o->dirty, 1;
 $o->set_dirty(0);
 is $o->dirty, 0;

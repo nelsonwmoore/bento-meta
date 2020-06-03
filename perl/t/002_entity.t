@@ -8,7 +8,7 @@ $o = TestObject->new();
 Log::Log4perl->easy_init($FATAL);
 
 # attr
-is_deeply [sort $o->attrs], [sort qw/my_scalar_attr my_object_attr my_array_attr my_hash_attr id desc _from _to/], "attrs()";
+is_deeply [sort $o->attrs], [sort qw/my_scalar_attr my_object_attr my_array_attr my_hash_attr id desc _from _to _next _prev/], "attrs()";
 
 # setters
 $value = 'narf';
@@ -27,6 +27,7 @@ is $o->my_hash_attr('brand'), 1, "get hash value for key";
 
 # init
 ok $val = TestObject->new({my_scalar_attr => 'tester'});
+ok $val2 = TestObject->new({my_scalar_attr => 'tester2'}); 
 ok $o = TestObject->new({
   my_scalar_attr => 1,
   my_array_attr => [qw/ a b c /],
@@ -45,12 +46,30 @@ is $o->atype('my_object_attr'),'TestObject', "atype => object";
 is $o->atype('my_array_attr'), 'ARRAY', "atype ARRAY";
 is $o->atype('my_hash_attr'), 'HASH', "atype HASH";
 
+
+ok $val->{pvt}{_belongs}{"$o".":my_object_attr"}, '_belongs entry created';
+is_deeply $val->{pvt}{_belongs}{"$o".":my_object_attr"}, [$o, 'my_object_attr'], '_belongs entry correct';
+
+ok $o->set_my_object_attr($val2), 'change object attr';
+is scalar $o->removed_entities, 1, "removed entities loaded";
+is( $o->pop_removed_entities->[1], $val, "pop rm entity");
+ok !$val->{pvt}{_belongs}{"$o".":my_object_attr"}, '_belongs entry removed';
+is_deeply $val2->{pvt}{_belongs}{"$o".":my_object_attr"}, [$o, 'my_object_attr'], '_belongs entry correct';
+
 ok $o->set_my_object_attr(undef), 'clear object attr';
 ok !$o->my_object_attr, 'object cleared';
 is $o->{_my_object_attr},\undef, 'cleared object is \undef';
 is scalar $o->removed_entities, 1, "removed entities loaded";
-is( ($o->removed_entities)[0], $val, "entity correct");
-is( $o->pop_removed_entities->[1], $val, "pop rm entity");
+ok !$val2->{pvt}{_belongs}{"$o".":my_object_attr"}, '_belongs entry removed';
+
+ok $o->set_my_hash_attr(yet => $val), 'add obj to hash attr at key';
+ok $val->{pvt}{_belongs}{"$o".":my_hash_attr:yet"}, '_belongs entry created';
+is_deeply $val->{pvt}{_belongs}{"$o".":my_hash_attr:yet"}, [$o,'my_hash_attr','yet'], '_belongs entry correct';
+
+
+
+is( ($o->removed_entities)[0], $val2, "entity correct");
+is( $o->pop_removed_entities->[1], $val2, "pop rm entity");
 is $o->dirty, 1;
 $o->set_dirty(0);
 is $o->dirty, 0;

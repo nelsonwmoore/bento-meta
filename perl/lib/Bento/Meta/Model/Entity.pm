@@ -10,6 +10,7 @@ use strict;
 our $OBJECT_MAP;
 our $AUTOLOAD;
 our $VERSIONING_ON=0;
+our $VERSION_COUNT;
 
 our @private_attr = qw/
 _dirty
@@ -26,6 +27,7 @@ sub new {
   #                           attrs not yet
   $self->{pvt}{_neoid} = undef; # database id for this entity
   $self->{pvt}{_removed_entities} = []; # stash removed things here
+  $self->{pvt}{_belongs} = {}; # other objects that refer to this one
   $self->{_desc} = undef; # free text description for entity
   $self->{_id} = undef; # unique identifier across entities
   
@@ -46,7 +48,33 @@ sub new {
     for my $k (keys %$init) {
       if (grep /^$k$/, @declared_atts) {
         my $set = "set_$k";
-        $self->$set($init->{$k});
+        my $val = $init->{$k};
+        $self->$set($val);
+        if (blessed $val) {
+          $self->{pvt}{_belongs}{"$val".":$k"} = [$val, $k]
+        }
+        elsif (ref $val eq 'HASH') {
+          for my $kk (keys %{$val}) {
+            unless (blessed $val->{$kk}) {
+              INFO ref($self)."::new - hash value for $k:$kk is not an object";
+              next;
+            }
+            $self->{pvt}{_belongs}{"$$val{$kk}".":$k:$kk"} = [$val->{$kk}, $k, $kk];
+          }
+        }
+        else {
+          1; # perl scalar value
+        }
+      }
+      elsif ($k eq 'pvt') {
+        # if dup()ing an object, preserve its pointers to its containing
+        # objects...
+        if ($init->{pvt}{_belongs}) {
+          for my $bk (keys %{$init->{pvt}{_belongs}}) {
+            $self->{pvt}{_belongs}{$bk} =
+              $init->{pvt}{_belongs}{$bk};
+          }
+        }
       }
       else {
         LOGWARN "${class}::new() - attribute '$k' in init not declared in object";
@@ -158,6 +186,15 @@ sub del {
       LOGWARN ref($self)."::del - current version count ($VERSION_COUNT) is less than object's _to attribute (".$self->_to.")";
       return;
     }
+  }
+  else { # "remove" an object - by unlinking it from other objects
+    my @v = values %{ pop @{$self->{pvt}{_belongs}} };
+    for my $v ( @v ) {
+      my ($obj,$attr,$key) = @$v;
+      my $set = "set_$attr";
+      $obj->$set( ($key ? $key : ()), undef );
+    }
+  }
   return 1;
 }
 
@@ -194,7 +231,7 @@ sub set_method {
   if ($VERSIONING_ON &&
         ($VERSION_COUNT < $self->_from)) # 
     {
-    $dup = $self->dup;
+    my $dup = $self->dup;
     # will leave the dup behind as the "old" object...
     $dup->{prv} = clone $self->{prv};
     $dup->set_next($self);
@@ -220,9 +257,11 @@ sub set_method {
         my $oldval;
         if ($self->{"_$method"}{$args[0]}) {
           $oldval = delete $self->{"_$method"}{$args[0]};
+          delete $oldval->{pvt}{_belongs}{"$self".":$method:$args[0]"};
           $self->push_removed_entities("$method:$args[0]" => $oldval);
         }
         if (defined $args[1]) {
+          $args[1]->{pvt}{_belongs}{"$self".":$method:$args[0]"} = [$self,$method,$args[0]] if blessed $args[1];
           return $self->{"_$method"}{$args[0]} = $args[1];
         } else {            # 2nd arg is explicit undef - means delete
           return $oldval;
@@ -234,9 +273,11 @@ sub set_method {
     do {                        # else, a scalar attribute
       my $oldval = $self->{"_$method"};
       if (blessed $oldval) {    # an object-valued attribute
+        delete $oldval->{pvt}{_belongs}{"$self".":$method"};
         $self->push_removed_entities("$method" => $oldval);
       }
       if (defined $args[0]) {   # a scalar-valued attribute
+        $args[0]->{pvt}{_belongs}{"$self".":$method"} = [$self,$method] if blessed $args[0];
         return $self->{"_$method"} = $args[0];
       } else {
         # handle clearing an object attribute

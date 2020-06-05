@@ -474,6 +474,23 @@ sub contains {
   return;
 }
 
+# versioning
+# versioning() - are we versioning?
+# versioning($bool) - set/clear versioning
+
+sub versioning {
+  my $self = $_[0];
+  return $Bento::Meta::Model::Entity::VERSIONING_ON =
+    ($_[1] // $Bento::Meta::Model::Entity::VERSIONING_ON);
+}
+
+sub version_count {
+  my $self = $_[0];
+  return $Bento::Meta::Model::Entity::VERSION_COUNT =
+    ($_[1] // $Bento::Meta::Model::Entity::VERSION_COUNT);
+}
+  
+
 # read API
 
 sub edges_in {

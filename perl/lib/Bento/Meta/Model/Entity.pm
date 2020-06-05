@@ -3,7 +3,6 @@ use Bento::Meta::Model::ObjectMap;
 use UUID::Tiny qw/:std/;
 use Scalar::Util qw/blessed/;
 use Clone qw/clone/;
-use Acme::Damn;
 use Log::Log4perl qw/:easy/;
 
 use strict;
@@ -40,51 +39,101 @@ sub new {
   $self->{_declared} = \@declared_atts;
 
   if (defined $init) {
-    unless (ref($init) =~ /^HASH|Neo4j::Bolt::Node$/) {
-      LOGDIE "${class}::new - arg1 must be a Neo4j::Bolt::Node or hashref of initial attr values";
+    if (ref($init) =~ /^Neo4j::Bolt::Node$/) {
+      return $self->set_with_node($init);
     }
-    return $self->set_with_node($init) if (ref($init) eq 'Neo4j::Bolt::Node');
-    # else, a plain hashref
-    for my $k (keys %$init) {
-      if (grep /^$k$/, @declared_atts) {
-        my $set = "set_$k";
-        my $val = $init->{$k};
-        $self->$set($val);
-        if (blessed $val) {
-          $self->{pvt}{_belongs}{"$val".":$k"} = [$val, $k]
-        }
-        elsif (ref $val eq 'HASH') {
-          for my $kk (keys %{$val}) {
-            unless (blessed $val->{$kk}) {
-              INFO ref($self)."::new - hash value for $k:$kk is not an object";
-              next;
+    elsif (ref($init) =~ /^${class}$/) {
+      return $self->set_with_entity($init);
+    }
+    elsif (ref($init) eq 'HASH') {
+      for my $k (keys %$init) {
+        if (grep /^$k$/, @declared_atts) {
+          my $set = "set_$k";
+          my $val = $init->{$k};
+          $self->$set($val);
+          if (blessed $val) {
+            $self->{pvt}{_belongs}{"$val".":$k"} = [$val, $k]
+          }
+          elsif (ref $val eq 'HASH') {
+            for my $kk (keys %{$val}) {
+              unless (blessed $val->{$kk}) {
+                INFO ref($self)."::new - hash value for $k:$kk is not an object";
+                next;
+              }
+              $self->{pvt}{_belongs}{"$$val{$kk}".":$k:$kk"} = [$val->{$kk}, $k, $kk];
             }
-            $self->{pvt}{_belongs}{"$$val{$kk}".":$k:$kk"} = [$val->{$kk}, $k, $kk];
+          }
+          else {
+            1; # perl scalar value
           }
         }
         else {
-          1; # perl scalar value
+          LOGWARN "${class}::new() - attribute '$k' in init not declared in object";
+          $self->{"_$k"} = $init->{$k};
         }
       }
-      elsif ($k eq 'pvt') {
-        # if dup()ing an object, preserve its pointers to its containing
-        # objects...
-        if ($init->{pvt}{_belongs}) {
-          for my $bk (keys %{$init->{pvt}{_belongs}}) {
-            $self->{pvt}{_belongs}{$bk} =
-              $init->{pvt}{_belongs}{$bk};
-          }
-        }
+    }
+    else {
+      LOGDIE "${class}::new - arg1 must be a Neo4j::Bolt::Node or hashref of initial attr values";
+    }
+    if ($VERSIONING_ON) {
+      if (! defined $VERSION_COUNT) {
+        LOGDIE ref($self).'::new - VERSION_COUNT is not currently defined';
       }
       else {
-        LOGWARN "${class}::new() - attribute '$k' in init not declared in object";
-        $self->{"_$k"} = $init->{$k};
+        $self->set_from($VERSION_COUNT);
       }
     }
   }
   return $self;
 }
 
+sub set_with_node {
+  my $self = shift;
+  my ($node) = @_;
+  unless (ref($node) eq 'Neo4j::Bolt::Node') {
+    LOGDIE ref($self)."::set_with_node : arg1 must be a Neo4j::Bolt::Node";
+  }
+  # note: if property is not present in node, set_with_node will
+  # undef the corresponding attribute. 
+  for (grep { !$self->atype($_) } $self->attrs) { # only scalar attrs
+    my $set = "set_$_";
+    $self->$set($node->{properties}{$_});
+  }
+  $self->set_neoid($node->{id});
+  return $self;
+}
+
+sub set_with_entity {
+  # essentially a shallow clone, but not too shallow
+  my $self = shift;
+  my ($ent) = @_;
+  unless (ref($self) eq ref($ent)) {
+    LOGWARN ref($self)."::set_with_entity - class mismatch: I am a ".ref($self).", but arg is a ".ref($ent);
+  }
+  # declared attributes
+  for my $k ($self->attrs) {
+    if (ref($ent->{"_$k"}) =~ /^ARRAY|HASH$/) {
+      if (ref($ent->{"_$k"}) eq 'HASH') {
+        $self->{"_$k"}{$_} = $ent->{"_$k"}{$_} for keys %{$ent->{"_$k"}{$_}};
+      }
+      else { # ARRAY
+        @{$self->{"_$k"}} = @{$ent->{"_$k"}};
+      }
+    }
+    else {
+      $self->{"_$k"} = $ent->{"_$k"};
+    }
+  }
+  # preserve its pointers to its containing objects
+  if ($ent->{pvt}{_belongs}) {
+    for my $bk (keys %{$ent->{pvt}{_belongs}}) {
+      $self->{pvt}{_belongs}{$bk} =
+        $ent->{pvt}{_belongs}{$bk};
+    }
+  }
+  return $self;
+}
 # add an object map to the (subclassed) object
 # and attach get, put as available methods to instances
 sub object_map {
@@ -163,23 +212,21 @@ sub AUTOLOAD {
 sub dup {
   my $self = shift;
   my $class = ref $self;
-  damn $self;
-  my $duplicate = $class->new($self);
-  bless $self, $class;
-  
+  return $class->new($self);
   # creating a shallow copy of the original obj is what we want,
   # since the object valued attributes will then point to the existing
   # objects, not newly created, copied objects. When pushed to the db,
   # this will yield new links, to the existing object from this new,
   # duplicated one.
-
-  return $duplicate;
 }
 
 sub del {
   my $self = shift;
-  if ($VERSIONING_ON) {
-    if ($VERSION_COUNT > $self->_from) {
+  if ($VERSIONING_ON && $self->versioned) {
+    if (! defined $VERSION_COUNT) {
+      LOGDIE ref($self)."::del - VERSION_COUNT is not currently defined";
+    }
+    elsif ($VERSION_COUNT > $self->_from) {
       $self->set_to($VERSION_COUNT);
     }
     else {
@@ -214,6 +261,8 @@ sub _to { shift->{__to} }
 sub set_from  { $_[0]->{__from} = $_[1] }
 sub set_to  { $_[0]->{__to} = $_[1] }
 
+sub versioned { defined shift->_from }
+
 sub dirty { shift->{pvt}{_dirty} }
 sub set_dirty { $_[0]->{pvt}{_dirty} = $_[1] }
 sub removed_entities { map { $_->[1] } @{shift->{pvt}{_removed_entities}} }
@@ -228,17 +277,20 @@ sub set_method {
   my $att = $self->{"_$method"};
   return unless @args;
 
-  if ($VERSIONING_ON &&
-        ($VERSION_COUNT < $self->_from)) # 
-    {
-    my $dup = $self->dup;
-    # will leave the dup behind as the "old" object...
-    $dup->{prv} = clone $self->{prv};
-    $dup->set_next($self);
-    $self->set_prev($dup);
-    $dup->set_to($VERSION_COUNT);
-    $self->set_neoid(undef);
-    $self->set_from($VERSION_COUNT); #
+  if ($VERSIONING_ON && $self->versioned) {
+    if (! defined $VERSION_COUNT) {
+      LOGDIE ref($self).":: set_method - VERSION_COUNT is not currently defined";
+    }
+    elsif  ($VERSION_COUNT > $self->_from) {
+      my $dup = $self->dup;
+      # will leave the dup behind as the "old" object...
+      $dup->{prv} = clone $self->{prv};
+      $dup->set_next($self);
+      $self->set_prev($dup);
+      $dup->set_to($VERSION_COUNT);
+      $self->set_neoid(undef);
+      $self->set_from($VERSION_COUNT); #
+    }
   }
   # cache should pick up the changes here
   ($Bento::Meta::Model::ObjectMap::Cache{$self->neoid} = $self) if $self->neoid;
@@ -343,21 +395,8 @@ sub drop_method {
 }
 
 sub map_defn { LOGWARN ref(shift)."::map_defn - subclass method; not defined for base class"; return; }1;
-sub set_with_node {
-  my $self = shift;
-  my ($node) = @_;
-  unless (ref($node) eq 'Neo4j::Bolt::Node') {
-    LOGDIE ref($self)."::set_with_node : arg1 must be a Neo4j::Bolt::Node";
-  }
-  # note: if property is not present in node, set_with_node will
-  # undef the corresponding attribute. 
-  for (grep { !$self->atype($_) } $self->attrs) { # only scalar attrs
-    my $set = "set_$_";
-    $self->$set($node->{properties}{$_});
-  }
-  $self->set_neoid($node->{id});
-  return $self;
-}
+
+
 
 # these are replaced by working methods when an object map is set
 sub get { return }

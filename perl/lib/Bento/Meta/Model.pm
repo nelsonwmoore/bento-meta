@@ -878,7 +878,7 @@ themselves, according to the L<metamodel structure|https://github.com/CBIIT/bent
 
 The Model object has methods that allow the user to add, remove and
 modify entities in the model. The Model object is an interface, in
-that loosely encapsulates the MDB structure and tries to relieve the
+that it loosely encapsulates the MDB structure and tries to relieve the
 user from having to remember that structure and guards against
 deviations from it. 
 

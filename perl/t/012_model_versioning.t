@@ -13,6 +13,7 @@ our $T = "${B}::Term";
 our $P = "${B}::Property";
 
 ok my $model = Bento::Meta::Model->new('test'), "model inst";
+$model->versioning(1);
 $model->version_count(1);
 
 #         r1
@@ -65,10 +66,12 @@ my ($n31);
 
 ok $n31 = $N->new({handle => 'n31'});
 ok $model->add_node($n31);
+
+ok $model->assign_edge_end($r21, 'dst' => $n31 ), 'reassign edge dst so I can...';
 ok $model->rm_node($n21), "del n21";
-ok $model->edge($r21->triplet)->set_dst($n31), "connect to n31 (generates dup)";
 is $r21->dst, $n31, "connected";
 ok $r21->_prev, "prev version n31 exists";
+
 is $r21->_prev->dst, $n21, "prev version still linked to n21";
 
 ok $model->node('n1')->set_category('blarf'), "set a scalar attribute (generates dup)";

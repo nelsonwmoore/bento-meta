@@ -345,7 +345,7 @@ sub add_terms {
 
 # rm_node( $node_or_handle )
 # node must participate in no edges to be able to be removed (like neo4j)
-# - so must rm_edge() first.
+# - so must rm_edge() or assign_edge_end() first.
 # returns the node removed
 # removes the node's properties from the model list, but not
 # from the node itself
@@ -376,6 +376,40 @@ sub rm_node {
   # old $node now in removed_entities
 }
 
+# assign_edge_end
+# disconnect one end of an Edge from its Node and reconnect to another given
+# Node
+# leave other end and all Props intact
+
+sub assign_edge_end {
+  my $self = shift;
+  my ($edge,$end, $node) = @_;
+  unless (ref($edge) =~ /Edge$/) {
+    LOGDIE ref($self)."::assign_edge_end - arg1 must be Edge object";
+  }
+  unless ($end =~ /^src|dst/) {
+    LOGDIE ref($self)."::assign_edge_end - arg2 must be either 'src' or 'dst'";
+  }
+  unless (ref($node) =~ /Node$/) {
+    LOGDIE ref($self)."::assign_edge_end - arg3 must be Node object";
+  }
+  if (!$self->contains($edge)) {
+    LOGWARN ref($self)."::assign_edge_end : edge '".$edge->triplet."' not contained in model '".$self->handle."'";
+    return;
+  }
+  if (!$self->contains($node)) {
+    LOGWARN ref($self)."::assign_edge_end : node '".$node->handle."' not contained in model '".$self->handle."'";
+    return;
+  }
+  my $set = "set_$end";
+  my ($hdl,$src,$dst) = split /:/, $edge->triplet;
+  delete $self->{_edge_table}{$hdl}{$src}{$dst};
+  $edge->$set($node);
+  ($hdl,$src,$dst) = split /:/, $edge->triplet;
+  LOGWARN ref($self)."::assign_edge_end - after reassigning $end, edge replaces exisiting edge ".$edge->triplet if !!$self->{_edge_table}{$hdl}{$src}{$dst};
+  return $self->{_edge_table}{$hdl}{$src}{$dst} = $edge;
+}
+
 # rm_edge( $edge_or_sth_else )
 # returns the edge removed from the model list
 # removes the edge's properties from the model list, but not
@@ -398,11 +432,12 @@ sub rm_edge {
     $self->set_props(join(':',$edge->triplet,$p->handle) => undef);
     # old $p now in removed_entities
   }
+  my $trp = $edge->triplet;
   my ($hdl,$src,$dst) = split /:/, $edge->triplet;
   delete $self->{_edge_table}{$hdl}{$src}{$dst};
   $edge->set_src(undef);
   $edge->set_dst(undef);
-  return $self->set_edges( $edge->triplet => undef );
+  return $self->set_edges( $trp => undef );
   # old $edge now in removed_entities
 }
 

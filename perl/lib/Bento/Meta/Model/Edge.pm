@@ -26,8 +26,7 @@ sub new {
 sub cardinality { shift->multiplicity(@_) }
 sub triplet {
   my $self = shift;
-  return $self->{_triplet} //
-    ($self->{_triplet} = join(':',$self->handle,
+  return ($self->{_triplet} = join(':',$self->handle,
                              $self->src->handle,
                              $self->dst->handle));
 }

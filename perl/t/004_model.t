@@ -99,6 +99,19 @@ is scalar $model->edges_by_type('of_case'), 2, 'edges_by_type of_case correct';
 is scalar $model->edges_by_src('sample'), 1, 'edges_by_src sample correct';
 is scalar $model->edges_by_dst('case'), 2, 'edges_by_dst case correct';
 
+# assign_edge_end
+my $prj = $model->node('project');
+ok $model->assign_edge_end( $of_case, 'dst', $prj ), 'reassign dst';
+is scalar $model->edges_by_dst('sample'), 1, 'edges w/case as dst dropped by 1';
+is ($model->edge('of_case:sample:project'), $of_case,  'registered with new triplet');
+ok $model->assign_edge_end( $of_case, 'src', $case), 'reassign src';
+is scalar $model->edges_by_src('case'),2, 'edges w/sample as src increased by 1';
+is ($model->edge('of_case:case:project'),$of_case, 'registered with new triplet');
+ok !$model->edge('of_case:sample:case');
+ok !$model->edge('of_case:sample:project');
+ok $model->assign_edge_end( $of_case, 'src', $sample), 'restore src';
+ok $model->assign_edge_end( $of_case, 'dst', $case), 'restore dst';
+
 ok my @edges = $model->edges_in($case), 'edges_in';
 is_deeply [ sort map {$_->triplet} @edges], [sort qw/of_case:sample:case of_case:diagnosis:case/], 'edges_in correct';
 ok @edges = $model->edges_out($sample), 'edges_out';
@@ -138,6 +151,7 @@ warning_like { $model->rm_node( $project ) } qr/can't remove node 'project'/, "w
 ok $model->add_prop($of_program, {handle => 'scroob'});
 ok $of_program->props('scroob');
 ok $model->prop('of_program:project:program:scroob');
+$DB::single=1;
 ok $ret = $model->rm_edge( $of_program ), 'rm edge';
 isa_ok($ret, $E);
 ok !$model->edge('of_program:project:program'), 'really gone';

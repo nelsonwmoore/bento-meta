@@ -15,6 +15,7 @@ our @private_attr = qw/
 _dirty
 _neoid
 _removed_entities
+_belongs
                      /;
 sub new {
   my $class = shift;
@@ -290,7 +291,7 @@ sub set_method {
       $self->set_prev($dup);
       $dup->set_to($VERSION_COUNT);
       $self->set_neoid(undef);
-      $self->set_from($VERSION_COUNT); #
+      $self->set_from($VERSION_COUNT); 
     }
   }
   # cache should pick up the changes here

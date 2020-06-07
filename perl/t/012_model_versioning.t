@@ -3,6 +3,7 @@ use Test::Exception;
 use Test::Warn;
 use lib '../lib';
 use Bento::Meta::Model;
+use Neo4j::Bolt;
 use strict;
 
 our $B = 'Bento::Meta::Model';
@@ -13,8 +14,14 @@ our $T = "${B}::Term";
 our $P = "${B}::Property";
 
 ok my $model = Bento::Meta::Model->new('test'), "model inst";
+$model->set_bolt_cxn( Neo4j::Bolt->connect('bolt://neo4j:j4oen@localhost:7687') );
+
+
+
 $model->versioning(1);
 $model->version_count(1);
+
+diag "Build versioned model";
 
 #         r1
 #       /   \
@@ -69,10 +76,13 @@ ok $model->add_node($n31);
 
 ok $model->assign_edge_end($r21, 'dst' => $n31 ), 'reassign edge dst so I can...';
 ok $model->rm_node($n21), "del n21";
+
 is $r21->dst, $n31, "connected";
 ok $r21->_prev, "prev version n31 exists";
 
 is $r21->_prev->dst, $n21, "prev version still linked to n21";
+
+ok $model->add_prop($n31 => $p21);
 
 ok $model->node('n1')->set_category('blarf'), "set a scalar attribute (generates dup)";
 is $n1->category, 'blarf', "attr correct";
@@ -97,6 +107,14 @@ ok $model->add_prop($n2 => $p41), "add p41 to n2 (generates dup)";
 ok $n2->_prev, "yep";
 ok !$n2->_prev->props('p41'), "p41 not on prev n2";
 is $n2->props('p41'),$p41, "on current";
+
+diag "Access within versions";
+
+
+
+# $model->put;
+
+1;
 
 
 done_testing;

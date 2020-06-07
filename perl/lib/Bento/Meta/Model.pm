@@ -15,6 +15,8 @@ use Carp qw/croak/;
 use Log::Log4perl qw/:easy/;
 use strict;
 
+our @private_attr = qw/ versions /;
+
 # new($handle)
 sub new {
   my $class = shift;
@@ -31,6 +33,7 @@ sub new {
     _edge_table => {},
     _version => undef,
   });
+  $self->{pvt}{versions} = {};
   if ($bolt_cxn) { # create object maps
     unless (ref($bolt_cxn) eq 'Neo4j::Bolt::Cxn') {
       LOGDIE ref($self)."::new : arg2 must be a Neo4j::Bolt::Cxn";

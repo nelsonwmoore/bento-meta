@@ -53,7 +53,7 @@ sub new {
           my $val = $init->{$k};
           $self->$set($val);
           if (blessed $val) {
-            $self->{pvt}{_belongs}{"$val".":$k"} = [$val, $k]
+            $val->{pvt}{_belongs}{"$self".":$k"} = [$self, $k]
           }
           elsif (ref $val eq 'HASH') {
             for my $kk (keys %{$val}) {
@@ -61,7 +61,7 @@ sub new {
                 INFO ref($self)."::new - hash value for $k:$kk is not an object";
                 next;
               }
-              $self->{pvt}{_belongs}{"$$val{$kk}".":$k:$kk"} = [$val->{$kk}, $k, $kk];
+              $val->{$kk}->{pvt}{_belongs}{"$self".":$k:$kk"} = [$self, $k, $kk];
             }
           }
           else {
@@ -287,11 +287,21 @@ sub set_method {
       my $dup = $self->dup;
       # will leave the dup behind as the "old" object...
       $dup->{prv} = clone $self->{prv};
+      # click the ratchet:
+      $dup->set_to($VERSION_COUNT); 
+      $self->set_from($VERSION_COUNT);
+      # link the dups
       $dup->set_next($self);
       $self->set_prev($dup);
-      $dup->set_to($VERSION_COUNT);
+      # make $self the 'new one';
       $self->set_neoid(undef);
-      $self->set_from($VERSION_COUNT); 
+      # update the owners of $self and dup if nec.
+      my @owners = values %{$self->{pvt}{_belongs}};
+      for my $ov (@owners) {
+        my ($obj,$attr,$key) = @$ov;
+        my $set = "set_$attr";
+        $obj->$set( ($key ? $key : ()), $self );
+      }
     }
   }
   # cache should pick up the changes here
@@ -311,7 +321,7 @@ sub set_method {
       elsif (!ref($args[0]) && @args > 1) { # a key
         LOGDIE ref($self)."::set_$att - key cannot be empty string" unless $args[0];
         my $oldval;
-        if ($self->{"_$method"}{$args[0]}) {
+        if ($self->{"_$method"}{$args[0]}) { # we're replacing an existing value
           $oldval = delete $self->{"_$method"}{$args[0]};
           delete $oldval->{pvt}{_belongs}{"$self".":$method:$args[0]"};
           $self->push_removed_entities("$method:$args[0]" => $oldval);

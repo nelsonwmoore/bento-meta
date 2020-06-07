@@ -60,11 +60,12 @@ is $model->version_count(2), 2, "bump up version";
 my ($r21,$n21,$p21);
 ok $n21 = $N->new({handle=>'n21'});
 ok $r21 = $E->new({handle=>'r21', src => $n2, dst => $n21});
+
 ok $p21 = $P->new({handle=>'p21'});
 ok $n21->set_props('p21' => $p21);
 
 is $r1->dst, $r21->src, 'same object';
-    
+
 for my $e ($r21,$n21,$p21) {
   is $e->_from, 2, 'from set (2)';
   ok !$e->_to, 'to unset';
@@ -84,19 +85,25 @@ is $model->version_count(3), 3, "bump version count";
 my ($n31);
 
 ok $n31 = $N->new({handle => 'n31'});
-
 ok $n21->del, "del n21";
-# ok !$r21->dst, "r21 dst dangling"; 
+
 ok $r21->set_dst($n31), "connect to n31 (generates dup)";
+
 is $r21->dst, $n31, "connected";
 ok $r21->_prev, "prev version n31 exists";
 is $r21->_prev->_next, $r21, "two-way link";
 is $r21->_prev->handle, 'r21', "prev version called r21";
 is $r21->_prev->dst, $n21, "prev version still linked to n21";
 
+$DB::single=1;
 ok $n1->set_category('blarf'), "set a scalar attribute (generates dup)";
 is $n1->category, 'blarf', "attr correct";
 ok !$n1->_prev->category, "previous version attr still empty";
+ok ref($n1->_prev->_prev) eq 'SCALAR', 'only two versions of n1';
+ok $r1->_prev, "changing n1 induced a change on r1 (n1 owner)";
+is $r1->src->category, 'blarf', "latest r1 src, i.e., n1, has category attr.";
+ok !$r1->_prev->src->category, "but old r1 src, i.e., old n1, has no category attr.";
+ok ref($r1->_prev->_prev) eq 'SCALAR', 'only two versions of r1';
 my $prev = $n1->_prev;
 ok $n1->set_model('test2'), "change another attr (shouldn't dup)";
 is $n1->_prev, $prev, "didn't dup";

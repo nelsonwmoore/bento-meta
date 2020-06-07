@@ -283,7 +283,7 @@ sub set_method {
     if (! defined $VERSION_COUNT) {
       LOGDIE ref($self).":: set_method - VERSION_COUNT is not currently defined";
     }
-    elsif  ($VERSION_COUNT > $self->_from) {
+    elsif  (($VERSION_COUNT > $self->_from) && ! defined $self->_to) { 
       my $dup = $self->dup;
       # will leave the dup behind as the "old" object...
       $dup->{prv} = clone $self->{prv};
@@ -300,7 +300,13 @@ sub set_method {
       for my $ov (@owners) {
         my ($obj,$attr,$key) = @$ov;
         my $set = "set_$attr";
-        $obj->$set( ($key ? $key : ()), $self );
+        $obj->$set( ($key ? $key : ()), $self ); # this is duplicating the owning entity, if nec.
+        # kludge
+        if (ref($obj->_prev) ne 'SCALAR') {
+          if ($obj->_prev->$attr( ($key ? $key : ()) ) == $self ) {
+            $obj->_prev->$set( ($key ? $key : ()), $dup ); # point to the old version
+          }
+        }
       }
     }
   }

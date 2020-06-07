@@ -115,7 +115,7 @@ sub set_with_entity {
   for my $k ($self->attrs) {
     if (ref($ent->{"_$k"}) =~ /^ARRAY|HASH$/) {
       if (ref($ent->{"_$k"}) eq 'HASH') {
-        $self->{"_$k"}{$_} = $ent->{"_$k"}{$_} for keys %{$ent->{"_$k"}{$_}};
+        $self->{"_$k"}{$_} = $ent->{"_$k"}{$_} for keys %{$ent->{"_$k"}};
       }
       else { # ARRAY
         @{$self->{"_$k"}} = @{$ent->{"_$k"}};
@@ -140,6 +140,7 @@ sub object_map {
   my $class = shift;
   unless (!ref $class) {
     LOGDIE __PACKAGE__."::object_map : class method only";
+    return;
   }
   my ($map, $bolt_cxn) = @_;
   my $omap = eval "\$${class}::OBJECT_MAP;";
@@ -305,7 +306,9 @@ sub set_method {
     /^HASH$/ && do { 
       if (ref $args[0] eq 'HASH') { # a hashref
         return $self->{"_$method"} = $args[0];
-      } elsif (!ref($args[0]) && @args > 1) { # a key
+      }
+      elsif (!ref($args[0]) && @args > 1) { # a key
+        LOGDIE ref($self)."::set_$att - key cannot be empty string" unless $args[0];
         my $oldval;
         if ($self->{"_$method"}{$args[0]}) {
           $oldval = delete $self->{"_$method"}{$args[0]};

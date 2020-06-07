@@ -24,8 +24,14 @@ sub map_defn {
       [ name => 'name'],
       [ url => 'url'],
       [ is_external => 'is_external'],
+      [ _to => '_to'],
+      [ _from => '_from'],
      ],
     object => [
+      [ _next => ':_next>',
+        'Bento::Meta::Model::Origin' => 'origin'],
+      [ _prev => '<:_prev',
+        'Bento::Meta::Model::Origin' => 'origin']
      ],
     collection => [
       [ 'entities' => ':>',

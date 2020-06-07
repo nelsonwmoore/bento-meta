@@ -1,7 +1,7 @@
 package Bento::Meta::Model;
 use base Bento::Meta::Model::Entity;
 use v5.10;
-use Scalar::Util qw/blessed/;
+use Scalar::Util qw/blessed looks_like_number/;
 use lib '../../../lib';
 use Bento::Meta::Model::Node;
 use Bento::Meta::Model::Edge;
@@ -29,6 +29,7 @@ sub new {
     _edges => {},
     _props => {},
     _edge_table => {},
+    _version => undef,
   });
   if ($bolt_cxn) { # create object maps
     unless (ref($bolt_cxn) eq 'Neo4j::Bolt::Cxn') {
@@ -47,8 +48,8 @@ sub set_bolt_cxn {
   unless ( $cxn->isa('Neo4j::Bolt::Cxn') ) {
     LOGDIE ref($self)."::set_bolt_cxn : arg1 must be a Neo4j::Bolt::Cxn";
   }
-  $self->_build_maps;
   $self->{_bolt_cxn} = $cxn;
+  $self->_build_maps;
 }
 
 sub bolt_cxn { shift->{_bolt_cxn} }
@@ -144,12 +145,13 @@ sub put {
     my $obj = shift;
     return if $seen{"$obj"};
     $seen{"$obj"}++;
+    $DB::single = 1 if (ref $obj && ! blessed $obj);
     $obj->put() if $obj->dirty == 1;
     for my $att (map { $_->[0] || () }
                    @{$obj->map_defn->{object}},
                  @{$obj->map_defn->{collection}}) {
       for my $ent ($obj->$att) {
-        next unless defined $ent;
+        next unless (defined $ent && blessed $ent);
         $do->($ent);
       }
     }
@@ -524,7 +526,17 @@ sub version_count {
   return $Bento::Meta::Model::Entity::VERSION_COUNT =
     ($_[1] // $Bento::Meta::Model::Entity::VERSION_COUNT);
 }
-  
+
+sub use_version {
+  my $self = shift;
+  my ($version) = @_;
+  if (@_ && !defined $version) {
+    $self->set_version(undef);
+    return 0e0;
+  }
+  LOGDIE ref($self)."::use_version - arg1 must be number" unless looks_like_number $version;
+  return $self->set_version($version);
+}
 
 # read API
 

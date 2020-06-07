@@ -19,8 +19,14 @@ sub map_defn {
     label => 'concept',
     simple => [
       [ id => 'id' ],
+      [ _to => '_to'],
+      [ _from => '_from'],
      ],
     object => [
+      [ _next => ':_next>',
+        'Bento::Meta::Model::Concept' => 'concept'],
+      [ _prev => '<:_prev',
+        'Bento::Meta::Model::Concept' => 'concept']
      ],
     collection => [
       [ terms => '<:represents',

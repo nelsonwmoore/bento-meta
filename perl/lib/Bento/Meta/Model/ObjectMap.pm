@@ -225,17 +225,17 @@ sub put {
   $obj->set_neoid($n_id);
   for my $attr ($self->relationship_attrs) {
     my @values = $obj->$attr;
+    @values = grep { defined $_ && (ref() ne 'SCALAR') } @values;
     next unless @values;
     for my $v (@values) {
-      next unless defined $v;
-      unless ($v->neoid) { # create unmapped subordinate nodes
+      unless (defined $v->neoid) { # create unmapped subordinate nodes
         @stmts = $v->put_q;
         for my $q (@stmts) {
           $rows = $self->bolt_cxn->run_query($q);
           return _fail_query($rows) if ($rows->failure);
         }
         my ($v_id) = $rows->fetch_next;
-        LOGWARN "No neo4j id retrieved" unless ($v_id);
+        LOGWARN "No neo4j id retrieved" unless (defined $v_id);
         $v->set_neoid($v_id);
         $Cache{$v->neoid} = $v; # cache it
         $v->set_dirty(1); # not fully put - indicates that put() should be called on the object $v later
@@ -266,7 +266,7 @@ sub rm {
     LOGWARN ref($self)."::rm - ObjectMap has no db connection set";
     return;
   }
-  unless ($obj->neoid) {
+  unless (defined $obj->neoid) {
     LOGWARN ref($self)."::rm - Can't remove an unmapped object";
     return;
   }
@@ -350,7 +350,7 @@ sub get_q {
     LOGDIE ref($self)."::get_q : arg1 must be an object of class ".$self->class;
   }
   
-  if ($obj->neoid) {
+  if (defined $obj->neoid) {
     return cypher->match('n:'.$self->label)
       ->where( { 'id(n)' => $obj->neoid })
       ->return('n','id(n)');
@@ -417,7 +417,7 @@ sub put_q {
     }
   }
   
-  if ($obj->neoid) {
+  if (defined $obj->neoid) {
   # rewrite props on existing node
   # need to set props that have defined values,
   # and remove props that undefined values -
@@ -476,7 +476,7 @@ sub put_attr_q {
       unless (blessed $val && $val->isa('Bento::Meta::Model::Entity')) {
         LOGDIE ref($self)."::put_attr_q : arg 3,... must all be Entity objects";
       }
-      unless ($val->neoid) {
+      unless (defined $val->neoid) {
         LOGDIE ref($self)."::put_attr_q : arg 3,... must all be mapped objects (all must have 'neoid' set)";
       }
       my $q = cypher->match(
@@ -552,7 +552,7 @@ sub rm_attr_q {
       unless (blessed $val && $val->isa('Bento::Meta::Model::Entity')) {
         LOGDIE ref($self)."::put_attr_q : arg 3,... must all be Entity objects";
       }
-      unless ($val->neoid) {
+      unless (defined $val->neoid) {
         LOGDIE ref($self)."::rm_attr_q : arg 3,... must all be mapped objects (all must have 'neoid' set)";
       }
       my $q = cypher->match(ptn->N('n:'.$self->label)
@@ -589,9 +589,9 @@ Bento::Meta::Model::ObjectMap - interface Perl objects with Neo4j database
   }
   #  object- or collection-valued attrs = relationships to other nodes
   $map->map_object_attr('concept' => '<:has_concept', 
-                        'concept' => 'Bento::Meta::Model::Concept');
+                        'Bento::Meta::Model::Concept' => 'concept');
   $map->map_collection_attr('props' => '<:has_property', 
-                            'property' => 'Bento::Meta::Model::Property');
+                            'Bento::Meta::Model::Property' => property');
 
   # use the map to generate canned cypher queries
 

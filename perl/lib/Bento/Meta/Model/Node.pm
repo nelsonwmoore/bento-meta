@@ -25,8 +25,14 @@ sub map_defn {
       [id => 'id'],
       [handle => 'handle'],
       [model => 'model'],
+      [ _to => '_to'],
+      [ _from => '_from'],
      ],
     object => [
+      [ _next => ':_next>',
+        'Bento::Meta::Model::Node' => 'node'],
+      [ _prev => '<:_prev',
+        'Bento::Meta::Model::Node' => 'node'],
       [concept => ':has_concept>',
        'Bento::Meta::Model::Concept' => 'concept']
      ],

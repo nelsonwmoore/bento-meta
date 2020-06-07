@@ -221,7 +221,7 @@ sub put {
     return _fail_query($rows) if ($rows->failure);
   }
   my ($n_id) = $rows->fetch_next;
-  LOGWARN "No neo4j id retrieved" unless ($n_id);
+  LOGWARN "No neo4j id retrieved" unless (defined $n_id);
   $obj->set_neoid($n_id);
   for my $attr ($self->relationship_attrs) {
     my @values = $obj->$attr;
@@ -281,7 +281,7 @@ sub rm {
   # second fetch fails correctly
   $rows->fetch_next;
   return _fail_query($rows) if ($rows->failure == 1);
-  unless ($n_id) {
+  unless (defined $n_id) {
     LOGWARN ref($self)."::rm - corresponding db node not found";
     return;
   }
@@ -300,7 +300,7 @@ sub add {
    );
   return _fail_query($rows) if ($rows->failure);
   my ($tgt_id) = $rows->fetch_next;
-  unless ($tgt_id) {
+  unless (defined $tgt_id) {
     LOGWARN ref($self)."::add - corresponding target db node not found";
     return;
   }
@@ -319,7 +319,7 @@ sub drop {
    );
   return _fail_query($rows) if ($rows->failure);
   my ($tgt_id) = $rows->fetch_next;
-  unless ($tgt_id) {
+  unless (defined $tgt_id) {
     INFO ref($self)."::drop - corresponding target db node not found";
     return;
   }

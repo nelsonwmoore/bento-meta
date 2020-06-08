@@ -133,6 +133,8 @@ sub set_with_entity {
         $ent->{pvt}{_belongs}{$bk};
     }
   }
+  $self->{pvt}{_neoid} = $ent->neoid;
+  $self->{pvt}{_dirty} = 1;
   return $self;
 }
 # add an object map to the (subclassed) object
@@ -286,7 +288,6 @@ sub set_method {
     elsif  (($VERSION_COUNT > $self->_from) && ! defined $self->_to) { 
       my $dup = $self->dup;
       # will leave the dup behind as the "old" object...
-      $dup->{prv} = clone $self->{prv};
       # click the ratchet:
       $dup->set_to($VERSION_COUNT); 
       $self->set_from($VERSION_COUNT);
@@ -330,7 +331,9 @@ sub set_method {
         if ($self->{"_$method"}{$args[0]}) { # we're replacing an existing value
           $oldval = delete $self->{"_$method"}{$args[0]};
           delete $oldval->{pvt}{_belongs}{"$self".":$method:$args[0]"};
-          $self->push_removed_entities("$method:$args[0]" => $oldval);
+          unless ($self->versioned) {
+            $self->push_removed_entities("$method:$args[0]" => $oldval);
+          }
         }
         if (defined $args[1]) {
           $args[1]->{pvt}{_belongs}{"$self".":$method:$args[0]"} = [$self,$method,$args[0]] if blessed $args[1];
@@ -346,7 +349,9 @@ sub set_method {
       my $oldval = $self->{"_$method"};
       if (blessed $oldval) {    # an object-valued attribute
         delete $oldval->{pvt}{_belongs}{"$self".":$method"};
-        $self->push_removed_entities("$method" => $oldval);
+        unless ($self->versioned) {
+          $self->push_removed_entities("$method" => $oldval);
+        }
       }
       if (defined $args[0]) {   # a scalar-valued attribute
         $args[0]->{pvt}{_belongs}{"$self".":$method"} = [$self,$method] if blessed $args[0];

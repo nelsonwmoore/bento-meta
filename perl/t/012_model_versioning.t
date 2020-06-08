@@ -61,6 +61,7 @@ ok $model->add_node($n21);
 ok $model->add_edge($r21);
 ok $model->add_prop( $n21 => $p21 );
 
+
 #         r1       r21 ------
 #       /   \    /            \
 #    n1*      n2      XXn21XX  n31
@@ -109,12 +110,6 @@ ok !$n2->_prev->props('p41'), "p41 not on prev n2";
 is $n2->props('p41'),$p41, "on current";
 
 diag "Access within versions";
-
-
-
-# $model->put;
-
-1;
 
 
 done_testing;

@@ -377,8 +377,10 @@ sub rm_node {
     $self->set_props(join(':',$node->handle,$p->handle) => undef);
     # old $prop now in removed_entities
   }
-  return $self->set_nodes( $node->handle => undef );
+  $self->set_nodes( $node->handle => undef );
   # old $node now in removed_entities
+  if ($node->versioned) { $node->del; }
+  return $self;
 }
 
 # assign_edge_end
@@ -442,8 +444,10 @@ sub rm_edge {
   delete $self->{_edge_table}{$hdl}{$src}{$dst};
   $edge->set_src(undef);
   $edge->set_dst(undef);
-  return $self->set_edges( $trp => undef );
+  $self->set_edges( $trp => undef );
   # old $edge now in removed_entities
+  if ($edge->versioned) { $edge->del; }
+  return $edge;
 }
 
 # rm_prop( $prop_or_handle )
@@ -473,6 +477,7 @@ sub rm_prop {
       # old $prop now in removed_entities
     }
   }
+  if ($prop->versioned) { $prop->del; }
   return $prop; 
 }
 

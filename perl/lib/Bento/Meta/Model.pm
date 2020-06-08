@@ -380,7 +380,7 @@ sub rm_node {
   $self->set_nodes( $node->handle => undef );
   # old $node now in removed_entities
   if ($node->versioned) { $node->del; }
-  return $self;
+  return $node;
 }
 
 # assign_edge_end

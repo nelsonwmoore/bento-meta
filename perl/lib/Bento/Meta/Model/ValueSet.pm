@@ -47,7 +47,7 @@ sub map_defn {
     object => [
       [ _next => ':_next>',
         'Bento::Meta::Model::ValueSet' => 'value_set'],
-      [ _prev => '<:_prev',
+      [ _prev => ':_prev>',
         'Bento::Meta::Model::ValueSet' => 'value_set'],
       [ prop => '<:has_value_set',
         'Bento::Meta::Model::Property' => 'property' ],

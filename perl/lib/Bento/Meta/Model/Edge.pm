@@ -47,7 +47,7 @@ sub map_defn {
     object => [
       [ _next => ':_next>',
         'Bento::Meta::Model::Edge' => 'relationship'],
-      [ _prev => '<:_prev',
+      [ _prev => ':_prev>',
         'Bento::Meta::Model::Edge' => 'relationship'],
       [ src => ':has_src>',
         'Bento::Meta::Model::Node' => 'node' ],

@@ -30,7 +30,7 @@ sub map_defn {
     object => [
       [ _next => ':_next>',
         'Bento::Meta::Model::Origin' => 'origin'],
-      [ _prev => '<:_prev',
+      [ _prev => ':_prev>',
         'Bento::Meta::Model::Origin' => 'origin']
      ],
     collection => [

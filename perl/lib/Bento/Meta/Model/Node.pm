@@ -31,7 +31,7 @@ sub map_defn {
     object => [
       [ _next => ':_next>',
         'Bento::Meta::Model::Node' => 'node'],
-      [ _prev => '<:_prev',
+      [ _prev => ':_prev>',
         'Bento::Meta::Model::Node' => 'node'],
       [concept => ':has_concept>',
        'Bento::Meta::Model::Concept' => 'concept']

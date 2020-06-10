@@ -23,12 +23,24 @@ sub new {
   my $self = bless \%args, $class;
   $self->{tag} //= $TAG;
   $self->{name} //= "test$$";
-  $self->{ports} //= {7687 => undef};
+  $self->{ports} //= {7687 => undef, 7474 => undef};
   return $self;
 }
+
 sub error { shift->{_error} }
-sub port { shift->{ports}{shift()} }
+sub name { shift->{name} }
+sub tag {shift->{tag}}
 sub ports { shift->{ports} }
+sub port {
+  my $self = shift;
+  my $port = shift;
+  return unless defined $port;
+  if (!$self->ports->{$port}) {
+    $self->get_ports;
+  }
+  return $self->ports->{$port};
+}
+
 sub start {
   my $self = shift;
   my @startcmd = split / /, "docker run -d -P --name $$self{name} $$self{tag}";
@@ -38,13 +50,18 @@ sub start {
     return;
   }
   sleep 10;
+  $self->get_ports;
+  return 1;
+}
+
+sub get_ports {
+  my $self = shift;
   run [split / /, "docker container port $$self{name}"], \$in, \$out, \$err;
   for my $port (keys %{$self->{ports}}) {
     my ($p) = grep /${port}.tcp/, split /\n/,$out;
     ($p) = $p =~ m/([0-9]+)$/;
     $self->{ports}{$port} = $p;
   }
-  return 1;
 }
 
 sub stop {

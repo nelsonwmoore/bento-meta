@@ -218,7 +218,8 @@ sub put {
   my $rows;
   for my $q (@stmts) {
     $rows = $self->bolt_cxn->run_query($q);
-    return _fail_query($rows) if ($rows->failure);
+    LOGWARN ref($self)."::put - No rows returned from query (connection issue?)" unless defined $rows;
+    return _fail_query($rows) if ($rows && $rows->failure);
   }
   my ($n_id) = $rows->fetch_next;
   LOGWARN "No neo4j id retrieved" unless (defined $n_id);

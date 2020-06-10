@@ -1,11 +1,13 @@
 use Test::More;
 use Test::Exception;
 use Test::Warn;
-use lib '../lib';
+use lib qw'../lib ..';
+use Log::Log4perl qw/:easy/;
 use Bento::Meta::Model;
 use Neo4j::Bolt;
 use strict;
 
+Log::Log4perl->easy_init($INFO);
 our $B = 'Bento::Meta::Model';
 our $N = "${B}::Node";
 our $E = "${B}::Edge";
@@ -13,8 +15,18 @@ our $V = "${B}::ValueSet";
 our $T = "${B}::Term";
 our $P = "${B}::Property";
 
+unless (eval 'require t::NeoCon; 1') {
+  plan skip_all => "Docker not available for test database setup: skipping.";
+}
+$DB::single=1;
+my $docker = t::NeoCon->new(tag => 'maj1/test-plain-db-bento-meta');
+$docker->start;
+my $port = $docker->port(7687);
+diag "Neo4j on port $port";
+diag "HTTP on port ".$docker->port(7474);
+
 ok my $model = Bento::Meta::Model->new('test'), "model inst";
-$model->set_bolt_cxn( Neo4j::Bolt->connect('bolt://neo4j:j4oen@localhost:7687') );
+$model->set_bolt_cxn( Neo4j::Bolt->connect("bolt://localhost:$port") );
 
 
 
@@ -44,6 +56,10 @@ ok $model->add_prop( $n2 => $p1 );
 ok $model->add_prop( $n2 => $p2 );
 ok $model->add_prop( $n2 => $p3 );
 
+ok $model->put;
+$DB::single=1;
+1;
+
 #         r1       r21
 #       /   \    /    \
 #    n1       n2       n21
@@ -61,6 +77,9 @@ ok $model->add_node($n21);
 ok $model->add_edge($r21);
 ok $model->add_prop( $n21 => $p21 );
 
+ok $model->put;
+$DB::single=1;
+1;
 
 #         r1       r21 ------
 #       /   \    /            \
@@ -92,6 +111,9 @@ my $prev = $n1->_prev;
 ok $n1->set_model('test2'), "change another attr (shouldn't dup)";
 is $n1->_prev, $prev, "didn't dup";
 is $prev->_next, $n1, "yep";
+ok $model->put;
+$DB::single=1;
+1;
 
 #         r1       r21 --
 #       /   \    /        \
@@ -109,7 +131,17 @@ ok $n2->_prev, "yep";
 ok !$n2->_prev->props('p41'), "p41 not on prev n2";
 is $n2->props('p41'),$p41, "on current";
 
-diag "Access within versions";
+ok $model->put;
+$DB::single=1;
+1;
+
+# match (e) where (e._from <= $V) and (($V < e._to) or (not exists(e._to))) return e;
+# :param V => 4
 
 
 done_testing;
+
+END {
+  $docker->stop;
+  $docker->rm;
+}

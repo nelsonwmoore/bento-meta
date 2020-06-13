@@ -200,6 +200,10 @@ sub _fail_query {
 # new node will be added to the Model nodes hash
 sub add_node {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($init) = shift;
   if (ref($init) =~ /^HASH|Neo4j::Bolt::Node$/) {
     $init = Bento::Meta::Model::Node->new($init);
@@ -230,6 +234,10 @@ sub add_node {
 
 sub add_edge {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($init) = shift;
   my $etbl = $self->{_edge_table};
   if (ref($init) =~ /^HASH|Neo4j::Bolt::Node$/) {
@@ -270,6 +278,10 @@ sub add_edge {
 
 sub add_prop {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($ent, $init) = @_;
   unless ( ref($ent) =~ /Node|Edge$/ ) {
     LOGDIE ref($self)."::add_prop - arg1 must be Node or Edge object";
@@ -311,6 +323,10 @@ sub add_prop {
 
 sub add_terms {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($prop, @terms) = @_;
   unless (ref($prop) =~ /Property$/) {
     LOGDIE ref($self)."::add_terms : arg1 must be Property object";
@@ -356,6 +372,10 @@ sub add_terms {
 # from the node itself
 sub rm_node {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($node) = @_;
   unless (ref($node) =~ /Node$/) {
     LOGDIE ref($self)."::rm_node - arg1 must be Node object";
@@ -390,6 +410,10 @@ sub rm_node {
 
 sub assign_edge_end {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($edge,$end, $node) = @_;
   unless (ref($edge) =~ /Edge$/) {
     LOGDIE ref($self)."::assign_edge_end - arg1 must be Edge object";
@@ -423,6 +447,10 @@ sub assign_edge_end {
 # from the edge itself
 sub rm_edge {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($edge) = @_;
   unless (ref($edge) =~ /Edge$/) {
     LOGDIE ref($self)."::rm_edge - arg1 must be Edge object";
@@ -456,6 +484,10 @@ sub rm_edge {
 # returns the prop removed
 sub rm_prop {
   my $self = shift;
+  if (defined $self->version) {
+    LOGWARN ref($self)."This is a r/o copy at version ".$self->version;
+    
+  }
   my ($prop) = @_;
   unless (ref($prop) =~ /Property$/) {
     LOGDIE ref($self)."::rm_prop - arg1 must be Property object";
@@ -534,16 +566,41 @@ sub version_count {
   return $Bento::Meta::Model::Entity::VERSION_COUNT =
     ($_[1] // $Bento::Meta::Model::Entity::VERSION_COUNT);
 }
+sub _from { undef } # prevent Model object from entering the version cycle
+sub _to { undef }
 
-sub use_version {
+sub at_version {
   my $self = shift;
   my ($version) = @_;
   if (@_ && !defined $version) {
-    $self->set_version(undef);
+    LOGWARN ref($self)."::version - provide arg1 as number";
     return 0e0;
   }
-  LOGDIE ref($self)."::use_version - arg1 must be number" unless looks_like_number $version;
-  return $self->set_version($version);
+  LOGDIE ref($self)."::version - arg1 must be number" unless looks_like_number $version;
+  my $in_v = sub { my $o = shift; ($o->_from <= $version) && (($version < $o->_to) || !$o->_to) };
+  my $vmodel = Bento::Meta::Model->new($self->handle);
+  for my $o ($self->edges) {
+    my $oo = $o;
+    while (ref($oo) ne 'SCALAR' and !$in_v->($oo)) { $oo = $oo->_prev; }
+    next if ref($oo) eq 'SCALAR'; # end of list
+    $vmodel->set_edges($oo->triplet => $oo);
+    my ($t,$s,$d) = split /:/,$oo->triplet;
+    $vmodel->{_edge_table}{$t}{$s}{$d} = $oo;
+    for my $p ($oo->props) {
+      $vmodel->set_props(join(':',$oo->triplet,$p->handle) => $p);
+    }
+  }
+  for my $o ($self->nodes) {
+    my $oo = $o;
+    while (ref($oo) ne 'SCALAR' and !$in_v->($oo)) { $oo = $oo->_prev; }
+    next if ref($oo) eq 'SCALAR'; # xoend of list
+    $vmodel->set_nodes($oo->handle => $oo);
+    for my $p ($oo->props) {
+      $vmodel->set_props(join(':',$oo->handle,$p->handle) => $p);
+    }
+  }
+  $vmodel->set_version($version);
+  return $vmodel;
 }
 
 # read API

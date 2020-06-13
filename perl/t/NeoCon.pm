@@ -2,6 +2,7 @@ package t::NeoCon;
 use Log::Log4perl qw/:easy/;
 use IPC::Run qw/run/;
 use Carp qw/croak/;
+use Neo4j::Bolt;
 use strict;
 
 my ($in,$out,$err);
@@ -39,6 +40,12 @@ sub port {
     $self->get_ports;
   }
   return $self->ports->{$port};
+}
+
+sub cxn {
+  my $self = shift;
+  return $self->{_cxn} if $self->{_cxn};
+  return $self->{_cxn} = Neo4j::Bolt->connect("bolt://localhost:".$self->port(7687));
 }
 
 sub start {

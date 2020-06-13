@@ -114,6 +114,7 @@ sub set_with_entity {
   }
   # declared attributes
   for my $k ($self->attrs) {
+    next if $k =~ /^_prev|_next$/;
     if (ref($ent->{"_$k"}) =~ /^ARRAY|HASH$/) {
       if (ref($ent->{"_$k"}) eq 'HASH') {
         $self->{"_$k"}{$_} = $ent->{"_$k"}{$_} for keys %{$ent->{"_$k"}};
@@ -275,94 +276,126 @@ sub pop_removed_entities { pop @{shift->{pvt}{_removed_entities}} }
 sub push_removed_entities { push @{$_[0]->{pvt}{_removed_entities}},[$_[1] => $_[2]]; $_[2] }
 
 
-sub set_method {
+sub set_method  {
   my $self = shift;
   my ($method,@args) = @_;
-  my $att = $self->{"_$method"};
   return unless @args;
+  # process args
+  my $att = $self->{"_$method"};
+  my $att_type = ref $att;
+  my ($val, $key, $unset);
+  if (@args == 1) {
+    $val = $args[0];
+  }
+  else { # 2
+    ($key,$val) = @args;
+  }
+  $unset = ! defined $val;
+
+  my $wrap = 0;
+  my $dup;
 
   if ($VERSIONING_ON && $self->versioned) {
     if (! defined $VERSION_COUNT) {
       LOGDIE ref($self).":: set_method - VERSION_COUNT is not currently defined";
     }
-    elsif  (($VERSION_COUNT > $self->_from) && ! defined $self->_to) { 
-      my $dup = $self->dup;
+    elsif  (($VERSION_COUNT > $self->_from) && ! defined $self->_to) {
+      $wrap = 1;
+      $dup = $self->dup;
       # will leave the dup behind as the "old" object...
       # click the ratchet:
       $dup->set_to($VERSION_COUNT); 
       $self->set_from($VERSION_COUNT);
       # link the dups
+      if (ref $self->_prev ne 'SCALAR') {
+        $dup->set_prev( $self->_prev );
+        $self->_prev->set_next($dup);
+      }
       $dup->set_next($self);
       $self->set_prev($dup);
       # make $self the 'new one';
+      # $self->{pvt}{_belongs} = {}; # disconnect
       $self->set_neoid(undef);
-      # update the owners of $self and dup if nec.
-      my @owners = values %{$self->{pvt}{_belongs}};
+      my @owners = values %{$dup->{pvt}{_belongs}};
       for my $ov (@owners) {
         my ($obj,$attr,$key) = @$ov;
-        my $set = "set_$attr";
-        $obj->$set( ($key ? $key : ()), $self ); # this is duplicating the owning entity, if nec.
-        # kludge
-        if (ref($obj->_prev) ne 'SCALAR') {
-          if ($obj->_prev->$attr( ($key ? $key : ()) ) == $self ) {
-            $obj->_prev->$set( ($key ? $key : ()), $dup ); # point to the old version
-          }
-        }
+        next if ref($obj) eq 'Bento::Meta::Model';
+        ($key ? $obj->{"_$attr"}{$key} : $obj->{"_$attr"}) = $dup;
+        
       }
     }
   }
   # cache should pick up the changes here
+  my $ret;
   ($Bento::Meta::Model::ObjectMap::Cache{$self->neoid} = $self) if $self->neoid;
   $self->{pvt}{_dirty} = 1;
-  for (ref $att) {
-    /^ARRAY$/ && do {
-      unless (ref $args[0] eq 'ARRAY') {
-        LOGDIE "set_$method requires arrayref as arg1";
+ ATT:
+  for ($att_type) {
+    !/^ARRAY$/ && do { 
+      if (ref $val eq 'HASH') { # a hashref
+        $ret = $self->{"_$method"} = $val;
+        last ATT;
       }
-      return $self->{"_$method"} = $args[0];
-    };
-    /^HASH$/ && do { 
-      if (ref $args[0] eq 'HASH') { # a hashref
-        return $self->{"_$method"} = $args[0];
-      }
-      elsif (!ref($args[0]) && @args > 1) { # a key
-        LOGDIE ref($self)."::set_$att - key cannot be empty string" unless $args[0];
-        my $oldval;
-        if ($self->{"_$method"}{$args[0]}) { # we're replacing an existing value
-          $oldval = delete $self->{"_$method"}{$args[0]};
-          delete $oldval->{pvt}{_belongs}{"$self".":$method:$args[0]"};
-          unless ($self->versioned) {
-            $self->push_removed_entities("$method:$args[0]" => $oldval);
+      else {
+        my $bkey = join(':',"$self", $method,($key?$key:())); # _belongs key
+        my $oldval = ($key ? delete $self->{"_$method"}{$key} : delete $self->{"_$method"});
+        if ($oldval) { # we're replacing an existing value
+          #
+          if (blessed $oldval) {
+            unless ($self->versioned) {
+              delete $oldval->{pvt}{_belongs}{$bkey};
+              $self->push_removed_entities( ($key ? "$method:$key":$method)  => $oldval);
+            }
           }
         }
-        if (defined $args[1]) {
-          $args[1]->{pvt}{_belongs}{"$self".":$method:$args[0]"} = [$self,$method,$args[0]] if blessed $args[1];
-          return $self->{"_$method"}{$args[0]} = $args[1];
-        } else {            # 2nd arg is explicit undef - means delete
-          return $oldval;
+        if (!$unset) {
+          if (blessed $val) {
+            $val->{pvt}{_belongs}{$bkey} = [$self,$method,($key?$key:())];
+          }
+          $ret = ($key ? $self->{"_$method"}{$key} : $self->{"_$method"}) = $val;
+          last ATT;
         }
-      } else {
-        LOGDIE "set_$method requires hashref as arg1, or key => value as arg1 and arg2";
+        else { # 2nd arg is explicit undef - means delete
+          if (! defined $key) { # clear an object attribute with \undef
+            $self->{"_$method"} = (ref($oldval) eq 'SCALAR' || blessed $oldval) ? \undef : undef;
+          }
+          $ret = $oldval;
+          last ATT;
+        }
       }
     };
-    do {                        # else, a scalar attribute
-      my $oldval = $self->{"_$method"};
-      if (blessed $oldval) {    # an object-valued attribute
-        delete $oldval->{pvt}{_belongs}{"$self".":$method"};
-        unless ($self->versioned) {
-          $self->push_removed_entities("$method" => $oldval);
-        }
+    /^ARRAY$/ && do {
+      unless (ref $val eq 'ARRAY') {
+        LOGDIE "set_$method requires arrayref as arg1";
       }
-      if (defined $args[0]) {   # a scalar-valued attribute
-        $args[0]->{pvt}{_belongs}{"$self".":$method"} = [$self,$method] if blessed $args[0];
-        return $self->{"_$method"} = $args[0];
-      } else {
-        # handle clearing an object attribute
-        $self->{"_$method"} = ref($self->{"_$method"}) ? \undef : undef;
-        return $oldval; # value deleted consistent with HASH handler above
-      }
+      $ret = $self->{"_$method"} = $val;
+      last ATT;
     };
   }
+  if ($wrap) {
+          # update the original owners of $self and dup if nec.
+      my @owners = values %{$self->{pvt}{_belongs}};
+      for my $ov (@owners) {
+        my ($obj,$attr,$key) = @$ov;
+        next if ref($obj) eq 'Bento::Meta::Model';
+
+        my $set = "set_$attr";
+        $obj->$set( ($key ? $key : ()), $self ); # this is duplicating the owning entity, if nec.
+        if (ref($obj->_prev) ne 'SCALAR') {
+          # at this point, $dup thinks it's owned by $obj; it should be owned by
+          # old $obj, $obj->_prev
+          my $bkey = join(':',"$obj", $attr,($key?$key:())); # _belongs key
+          my $cruft = delete $dup->{pvt}{_belongs}{$bkey};
+          my $old_obj = $obj->_prev;
+          $bkey = join(':',"$old_obj", $attr,($key?$key:()));
+          $dup->{pvt}{_belongs}{$bkey} = [$old_obj,$attr,($key?$key:()) ];
+          # if ($obj->_prev->$attr( ($key ? $key : ()) ) == $self ) {
+          #   $obj->_prev->$set( ($key ? $key : ()), $dup ); # point to the old version
+          # }
+        }
+      }
+    }
+  return $ret;
 }
 
 sub get_method { # getter

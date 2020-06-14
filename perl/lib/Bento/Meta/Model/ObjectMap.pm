@@ -98,6 +98,7 @@ sub map_collection_attr {
 sub get {
   my $self = shift;
   my ($obj, $refresh) = @_;
+  my $q;
   unless ($self->bolt_cxn) {
     LOGWARN ref($self)."::get - ObjectMap has no db connection set";
     return;
@@ -106,8 +107,9 @@ sub get {
                   
   # Fully pull obj
   my $rows = $self->bolt_cxn->run_query(
-    $self->get_q( $obj )
+    $q = $self->get_q( $obj )
    );
+  DEBUG ref($self)."::get Q: $q";  
   return _fail_query($rows) if ($rows->failure);
   my ($n,$n_id) = $rows->fetch_next;
   unless ($n) {
@@ -123,8 +125,9 @@ sub get {
   $Cache{$obj->neoid} //= $obj; 
   for my $attr ($self->relationship_attrs) {
     $rows = $self->bolt_cxn->run_query(
-      $self->get_attr_q( $obj => $attr)
+      $q = $self->get_attr_q( $obj => $attr)
      );
+    DEBUG ref($self)."::get Q: $q";
     return _fail_query($rows) if ($rows->failure);
     my @values;
     $cls = $self->rmap->{$attr}{cls};
@@ -219,6 +222,7 @@ sub put {
   for my $q (@stmts) {
     $rows = $self->bolt_cxn->run_query($q);
     LOGWARN ref($self)."::put - No rows returned from query (connection issue?)" unless defined $rows;
+    DEBUG ref($self)."::put Q: $q";
     return _fail_query($rows) if ($rows && $rows->failure);
   }
   my ($n_id) = $rows->fetch_next;
@@ -233,6 +237,7 @@ sub put {
         @stmts = $v->put_q;
         for my $q (@stmts) {
           $rows = $self->bolt_cxn->run_query($q);
+          DEBUG ref($self)."::put Q: $q";          
           return _fail_query($rows) if ($rows->failure);
         }
         my ($v_id) = $rows->fetch_next;
@@ -245,6 +250,7 @@ sub put {
     @stmts = $self->put_attr_q($obj, $attr => @values);
     for my $q (@stmts) {
       $rows = $self->bolt_cxn->run_query($q);
+      DEBUG ref($self)."::put Q: $q";      
       return _fail_query($rows) if ($rows->failure);
     }
   }
@@ -263,6 +269,7 @@ sub put {
 sub rm {
   my $self = shift;
   my ($obj, $force) = @_;
+  my $q;
   unless ($self->bolt_cxn) {
     LOGWARN ref($self)."::rm - ObjectMap has no db connection set";
     return;
@@ -275,8 +282,9 @@ sub rm {
     INFO "Force (detach) delete on obj ".$obj->neoid;
   }
   my $rows = $self->bolt_cxn->run_query(
-    $self->rm_q( $obj, $force )
+    $q = $self->rm_q( $obj, $force )
    );
+  DEBUG ref($self)."::rm Q: $q";  
   my ($n_id) = $rows->fetch_next; # this fetch doesn't fail when the node
   # still has relationships, but the node isn't deleted either
   # second fetch fails correctly
@@ -292,13 +300,15 @@ sub rm {
 sub add {
   my $self = shift;
   my ($obj, $attr, $tgt) = @_;
+  my $q;
   unless ($self->bolt_cxn) {
     LOGWARN ref($self)."::add - ObjectMap has no db connection set";
     return;
   }
   my $rows = $self->bolt_cxn->run_query(
-    $self->put_attr_q( $obj, $attr, $tgt )
+    $q = $self->put_attr_q( $obj, $attr, $tgt )
    );
+  DEBUG ref($self)."::add Q: $q";
   return _fail_query($rows) if ($rows->failure);
   my ($tgt_id) = $rows->fetch_next;
   unless (defined $tgt_id) {
@@ -311,13 +321,15 @@ sub add {
 sub drop {
   my $self = shift;
   my ($obj, $attr, $tgt) = @_;
+  my $q;
   unless ($self->bolt_cxn) {
     LOGWARN ref($self)."::drop - ObjectMap has no db connection set";
     return;
   }
   my $rows = $self->bolt_cxn->run_query(
-    $self->rm_attr_q( $obj, $attr, $tgt )
+    $q = $self->rm_attr_q( $obj, $attr, $tgt )
    );
+  DEBUG ref($self)."::drop Q: $q";
   return _fail_query($rows) if ($rows->failure);
   my ($tgt_id) = $rows->fetch_next;
   unless (defined $tgt_id) {

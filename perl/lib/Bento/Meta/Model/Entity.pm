@@ -52,7 +52,7 @@ sub new {
           my $set = "set_$k";
           my $val = $init->{$k};
           $self->$set($val);
-          if (blessed $val) {
+          if (blessed $val && ($class ne 'Bento::Meta::Model')) {
             $val->{pvt}{_belongs}{"$self".":$k"} = [$self, $k]
           }
           elsif (ref $val eq 'HASH') {
@@ -61,7 +61,8 @@ sub new {
                 INFO ref($self)."::new - hash value for $k:$kk is not an object";
                 next;
               }
-              $val->{$kk}->{pvt}{_belongs}{"$self".":$k:$kk"} = [$self, $k, $kk];
+              $val->{$kk}->{pvt}{_belongs}{"$self".":$k:$kk"} = [$self, $k, $kk]
+                if $class ne 'Bento::Meta::Model';
             }
           }
           else {
@@ -349,7 +350,7 @@ sub set_method  {
           }
         }
         if (!$unset) {
-          if (blessed $val) {
+          if (blessed $val && (ref($self) ne 'Bento::Meta::Model')) {
             $val->{pvt}{_belongs}{$bkey} = [$self,$method,($key?$key:())];
           }
           $ret = ($key ? $self->{"_$method"}{$key} : $self->{"_$method"}) = $val;

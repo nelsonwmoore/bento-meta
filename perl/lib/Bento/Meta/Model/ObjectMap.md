@@ -13,9 +13,9 @@ Bento::Meta::Model::ObjectMap - interface Perl objects with Neo4j database
     }
     #  object- or collection-valued attrs = relationships to other nodes
     $map->map_object_attr('concept' => '<:has_concept', 
-                          'concept' => 'Bento::Meta::Model::Concept');
+                          'Bento::Meta::Model::Concept' => 'concept');
     $map->map_collection_attr('props' => '<:has_property', 
-                              'property' => 'Bento::Meta::Model::Property');
+                              'Bento::Meta::Model::Property' => property');
 
     # use the map to generate canned cypher queries
 
@@ -25,7 +25,7 @@ Bento::Meta::Model::ObjectMap - interface Perl objects with Neo4j database
 
 - new($obj\_class \[ => $neo4j\_node\_label \]\[, $bolt\_url\])
 
-    Create new ObjectMap object for class C($obj\_class). Arg is a string.
+    Create new ObjectMap object for class `$obj_class`. Arg is a string.
     If $label is not provided, the Neo4j label that is mapped to the
     object is set as the last token  in the class namespace, lower-cased.
     E.g., for an object of class `Bento::Meta::Model::Node`, the label is

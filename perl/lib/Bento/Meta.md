@@ -25,13 +25,13 @@ This class is just a [Bento::Meta::Model](/perl/lib/Bento/Meta/Model.md) factory
 
 - list\_db\_models($bolt\_url)
 
-    Lists all of the models found in a Neo4j database.  `$bolt_url` must
-    use the `bolt://` scheme.
+    Lists all of the models found in a Neo4j database. `$bolt_url` must
+    use the `bolt://` scheme. 
 
-- load\_\_all\_db\_models($bolt\_url)
+- load\_all\_db\_models($bolt\_url)
 
-    Loads all models found in a Neo4j database.  C<$bolt_url> must
-    use the C<bolt://> scheme. 
+    Loads all models found in a Neo4j database.  `$bolt_url` must
+    use the `bolt://` scheme. 
 
 - model($handle)
 

@@ -172,6 +172,12 @@ The base class Entity has the following private attributes
     $neo4j\_bolt\_node->{properties}, and assign object's neoid attribute
     to $neo4j\_bolt\_node->{id}.
 
+- set\_with\_entity($object)
+- entities()
+
+    Returns an array of entities to which the object belongs (i.e., for which the 
+    object is a value of some attribute.
+
 - map\_defn()
 
     This should be defined in the subclasses. It should return a map definition 

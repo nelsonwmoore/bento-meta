@@ -25,6 +25,7 @@ sub new {
     _bolt_cxn => $bolt_cxn,
     _property_map => {},
     _relationship_map => {},
+    _class_by_label => {},
    }, $class;
   
   return $self;
@@ -124,9 +125,8 @@ sub get {
   # $obj->set_neoid($n_id);
   $Cache{$obj->neoid} //= $obj; 
   for my $attr ($self->relationship_attrs) {
-    $rows = $self->bolt_cxn->run_query(
-      $q = $self->get_attr_q( $obj => $attr)
-     );
+    ($q) = $self->get_attr_q( $obj => $attr);
+    $rows = $self->bolt_cxn->run_query($q);
     DEBUG ref($self)."::get Q: $q";
     return _fail_query($rows) if ($rows->failure);
     my @values;
@@ -198,6 +198,47 @@ sub get {
   $obj->set_dirty(0); # this object up to date with db
   return $obj;
 }
+
+##
+sub get_owners {
+  my $self = shift;
+  my ($obj, $refresh) = @_;
+  my ($q, @ret);
+  unless ($self->bolt_cxn) {
+    LOGWARN ref($self)."::get - ObjectMap has no db connection set";
+    return;
+  }
+#  return $obj unless ( !$Cache{$obj->neoid} || $refresh || ($Cache{$obj->neoid}->dirty < 0) );
+                  
+  my $rows = $self->bolt_cxn->run_query(
+    $q = $self->get_owners_q( $obj )
+   );
+  DEBUG ref($self)."::get Q: $q";  
+  return _fail_query($rows) if ($rows->failure);
+  while (my ($reln,$n) = $rows->fetch_next) {
+    next if $reln =~ /_next|_prev/;
+    my $B = $self->class_by_label($n->{labels}[0]); # might break if mult labels
+    eval "require $B; 1" or LOGDIE ref($self)."::get_owners - can't load $B";
+    my $o = $B->new($n);
+    my ($type, $key) = @{$self->keys_by_class_and_reln($B, $reln)};
+    if ($type eq 'object') {
+      push @ret,[$o,$key];
+      #      $obj->{pvt}{_belongs}{"$o"} = [$o,$key];
+    }
+    elsif ($type eq 'collection') {
+      push @ret, [$o,$key, (grep /handle/,$obj->attrs ? $obj->handle : $obj->value)];
+      #      $obj->{pvt}{_belongs}{"$o"} = [$o,$key, $obj->can('handle') ?
+      #                                 $obj->handle : $obj->value];
+    }
+    else {
+      LOGDIE ref($self)."::get_owners - complete bork";
+    }
+
+  }
+  #  return $obj;
+  return @ret;
+}
+
 
 # put - write an object and its attributes to the database
 # - if object is mapped (has a Neo4j id), overwrite the db properties
@@ -305,9 +346,8 @@ sub add {
     LOGWARN ref($self)."::add - ObjectMap has no db connection set";
     return;
   }
-  my $rows = $self->bolt_cxn->run_query(
-    $q = $self->put_attr_q( $obj, $attr, $tgt )
-   );
+  ($q) = $self->put_attr_q( $obj, $attr, $tgt );
+  my $rows = $self->bolt_cxn->run_query( $q );
   DEBUG ref($self)."::add Q: $q";
   return _fail_query($rows) if ($rows->failure);
   my ($tgt_id) = $rows->fetch_next;
@@ -326,9 +366,8 @@ sub drop {
     LOGWARN ref($self)."::drop - ObjectMap has no db connection set";
     return;
   }
-  my $rows = $self->bolt_cxn->run_query(
-    $q = $self->rm_attr_q( $obj, $attr, $tgt )
-   );
+  ($q) = $self->rm_attr_q( $obj, $attr, $tgt );
+  my $rows = $self->bolt_cxn->run_query($q);
   DEBUG ref($self)."::drop Q: $q";
   return _fail_query($rows) if ($rows->failure);
   my ($tgt_id) = $rows->fetch_next;
@@ -408,6 +447,29 @@ sub get_attr_q {
   }
 }
 
+
+###
+sub get_owners_q {
+  my $self = shift;
+  my ($obj) = @_;
+  unless ( blessed $obj && $obj->isa($self->class) ) {
+    LOGDIE ref($self)."::get_owners_q : arg1 must be an object of class ".$self->class;
+  }
+  # set up obj match:
+  my $q = $self->get_q($obj);
+  # hack Cypher::Abstract - drop the return and add a with: 
+  pop @{$q->{stack}};
+  $q->with('n')
+    ->match(ptn->N('n')->R('<r')->N('c'))
+    ->return( 'TYPE(r)', 'c');
+  return $q;
+}
+
+
+
+
+
+
 # put_q
 # if obj has a neoid (is 'mapped'), then overwrite the props on that node
 # in the DB with the props in the obj
@@ -451,8 +513,8 @@ sub put_q {
     return @stmts;
   }
   # else, create new node with props that have defined values
-  return cypher->create(ptn->N('n:'.$self->label => $props))
-    ->return('id(n)');
+  return (cypher->create(ptn->N('n:'.$self->label => $props))
+    ->return('id(n)'));
 }
 
 # put_attr_q($obj, $attr => @values)
@@ -502,6 +564,7 @@ sub put_attr_q {
       push @stmts, $q;
       last unless $many;
     }
+    $DB::single = 1 unless @stmts;
     return @stmts;
   }
   else {
@@ -586,6 +649,34 @@ sub rm_attr_q {
   }
 }
 
+sub class_by_label {
+  my $self = shift;
+  my ($lbl) = @_;
+  $self->{_class_by_label}{$lbl} &&
+    return $self->{_class_by_label}{$lbl};
+  for my $ent (qw/Node Edge Property Concept ValueSet Origin Term/) {
+    my $B = "Bento::Meta::Model::$ent";
+    eval "require $B; 1" or
+      LOGDIE ref($self)."::class_by_label - can't load $B";
+    $self->{_class_by_label}{ $B->map_defn->{label} } = $B;
+  }
+  return $self->{_class_by_label}{$lbl};
+}
+
+sub keys_by_class_and_reln {
+  my $self = shift;
+  my ($cls, $reln) = @_;
+  $self->{_keys}{$cls} && $self->{_keys}{$cls}{$reln} &&
+    return $self->{_keys}{$cls}{$reln};
+  eval "require $cls; 1" or LOGDIE ref($self)."::keys_by_class_and_reln - can't load $cls";
+  for my $o (@{$cls->map_defn->{object}}) {
+    $self->{_keys}{$cls}{$reln} = [object => $o->[0]] if $o->[1] =~ /$reln/;
+  }
+  for my $c  (@{$cls->map_defn->{collection}}) {
+    $self->{_keys}{$cls}{$reln} = [collection => $c->[0]] if $c->[1] =~ /$reln/;    
+  }
+  return  $self->{_keys}{$cls}{$reln};
+}
 
 =head1 NAME
 

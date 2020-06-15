@@ -171,6 +171,7 @@ sub object_map {
  *${class}::put_q = sub { \$${class}::OBJECT_MAP->put_q( shift, \@_ ) };
  *${class}::add = sub { \$${class}::OBJECT_MAP->add( shift, \@_ ) };
  *${class}::drop = sub { \$${class}::OBJECT_MAP->drop( shift, \@_ ) };
+ *${class}::get_owners = sub { \$${class}::OBJECT_MAP->get_owners( shift, \@_ ) };
 |;
   return $omap;
 }
@@ -271,10 +272,18 @@ sub versioned { defined shift->_from }
 
 sub dirty { shift->{pvt}{_dirty} }
 sub set_dirty { $_[0]->{pvt}{_dirty} = $_[1] }
+
+sub entities {
+  my $self = shift;
+  return unless $self->{pvt}{_belongs};
+  return map { $$_[0] } values %{$self->{pvt}{_belongs}};
+}
+
 sub removed_entities { map { $_->[1] } @{shift->{pvt}{_removed_entities}} }
 sub clear_removed_entities { shift->{pvt}{_removed_entities} = [] }
 sub pop_removed_entities { pop @{shift->{pvt}{_removed_entities}} }
 sub push_removed_entities { push @{$_[0]->{pvt}{_removed_entities}},[$_[1] => $_[2]]; $_[2] }
+
 
 
 sub set_method  {
@@ -300,7 +309,9 @@ sub set_method  {
     if (! defined $VERSION_COUNT) {
       LOGDIE ref($self).":: set_method - VERSION_COUNT is not currently defined";
     }
-    elsif  (($VERSION_COUNT > $self->_from) && ! defined $self->_to) {
+    elsif  (($VERSION_COUNT > $self->_from) && ! defined $self->_to
+              && ! ($method eq 'entities') # kludge for test
+           ) {
       $wrap = 1;
       $dup = $self->dup;
       # will leave the dup behind as the "old" object...
@@ -652,6 +663,13 @@ Return type of the attribute $attr.
 Set all simple scalar attributes according to values in 
 $neo4j_bolt_node-E<gt>{properties}, and assign object's neoid attribute
 to $neo4j_bolt_node-E<gt>{id}.
+
+=item set_with_entity($object)
+
+=item entities()
+
+Returns an array of entities to which the object belongs (i.e., for which the 
+object is a value of some attribute.
 
 =item map_defn()
 

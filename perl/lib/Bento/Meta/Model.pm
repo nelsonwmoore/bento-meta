@@ -110,7 +110,8 @@ sub get {
   }
   # now get() each node, which should load the object properties and
   # create the cache...
-  $_->get($refresh) for (@n,@e,@p);
+  for (@n,@e,@p) {    $_->get($refresh);   }
+
   ($self->{_nodes}{$_->handle} = $_) for @n;
   for (@e) {
     $self->{_edges}{$_->triplet} = $_;
@@ -118,9 +119,9 @@ sub get {
     $self->{_edge_table}{$t}{$s}{$d} = $_;
   }
   for (@p) {
-    for my $e ($_->entities) {
-      my $pfx = (ref($e) =~ /Node$/ ? $e->handle :
-                 $e->triplet);
+    for my $e ($_->get_owners) {
+      my $pfx = (ref($e->[0]) =~ /Node$/ ? $e->[0]->handle :
+                 $e->[0]->triplet);
       $self->{_props}{join(':',$pfx,$_->handle)} = $_;
     }
   }
@@ -219,7 +220,6 @@ sub add_node {
     LOGWARN ref($self)."::add_node : model handle is '".$self->handle."', but node.model is '".$init->model."'";
   }
   for my $p ($init->props) { # add any props on this node to the model list
-    $p->set_entities($init->handle => $init);
     $p->set_model($self->handle);
     $self->set_props(join(':',$init->handle,$p->handle) => $p);
   }
@@ -262,7 +262,6 @@ sub add_edge {
   }
   $etbl->{$hdl}{$src}{$dst} = $init;
   for my $p ($init->props) { # add any props on this edge to the model list
-    $p->set_entities($init->triplet => $init);
     $p->set_model($self->handle);
     $self->set_props(join(':',$init->triplet,$p->handle) => $p);
   }
@@ -304,7 +303,6 @@ sub add_prop {
   }
   $init->set_model($self->handle) if (!$init->model);
   my $pfx = $ent->can('triplet') ? $ent->triplet : $ent->handle;
-  $init->set_entities($pfx => $ent); # "whom do I belong to?"
   if ( $self->prop(join(':',$pfx,$init->handle)) ) {
     LOGWARN ref($self)."::add_prop - overwriting existing prop '".join(':',$pfx,$init->handle)."'";
   }

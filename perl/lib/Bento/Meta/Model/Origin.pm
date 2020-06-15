@@ -10,7 +10,7 @@ sub new {
     _name => undef,
     _url => undef,
     _is_external => undef,
-    _entities => [], # entity | entity has_origin origin
+#    _entities => [], # entity | entity has_origin origin
   }, $init );
   
   return $self;
@@ -34,9 +34,9 @@ sub map_defn {
         'Bento::Meta::Model::Origin' => 'origin']
      ],
     collection => [
-      [ 'entities' => ':>',
-        ['Bento::Meta::Model::ValueSet',
-         'Bento::Meta::Model::Term'] => '' ]
+      # [ 'entities' => ':>',
+      #   ['Bento::Meta::Model::ValueSet',
+      #    'Bento::Meta::Model::Term'] => '' ]
      ]
    };
 }1;

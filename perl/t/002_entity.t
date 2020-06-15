@@ -51,9 +51,12 @@ ok $val->{pvt}{_belongs}{"$o".":my_object_attr"}, '_belongs entry created';
 is_deeply $val->{pvt}{_belongs}{"$o".":my_object_attr"}, [$o, 'my_object_attr'], '_belongs entry correct';
 
 ok $o->set_my_object_attr($val2), 'change object attr';
+is scalar $val2->entities, 1, 'val2 has 1 owner';
+
 is scalar $o->removed_entities, 1, "removed entities loaded";
 is( $o->pop_removed_entities->[1], $val, "pop rm entity");
 ok !$val->{pvt}{_belongs}{"$o".":my_object_attr"}, '_belongs entry removed';
+is scalar $val->entities, 0, 'va1 has no owners now';
 is_deeply $val2->{pvt}{_belongs}{"$o".":my_object_attr"}, [$o, 'my_object_attr'], '_belongs entry correct';
 
 ok $o->set_my_object_attr(undef), 'clear object attr';

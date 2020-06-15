@@ -15,7 +15,7 @@ sub new {
     _is_required => undef,
     _concept => \undef, # prop has_concept concept
     _value_set => \undef, # prop has_value_set value_set
-    _entities => {}, # entity | entity has_property prop
+#    _entities => {}, # entity | entity has_property prop
     _tags => [],
     _propdef => {}
    }, $init );
@@ -47,9 +47,9 @@ sub map_defn {
         'Bento::Meta::Model::Concept' => 'concept'],
      ],
     collection => [
-      [ 'entities' => '<:has_property',
-        ['Bento::Meta::Model::Node',
-         'Bento::Meta::Model::Edge'] => ''],
+      # [ 'entities' => '<:has_property',
+      #   ['Bento::Meta::Model::Node',
+      #    'Bento::Meta::Model::Edge'] => ''],
       ]
    };
 }

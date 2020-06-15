@@ -13,6 +13,7 @@ use Bento::Meta::Model::Term;
 use Neo4j::Cypher::Abstract qw/cypher ptn/;
 use Carp qw/croak/;
 use Log::Log4perl qw/:easy/;
+use Try::Tiny;
 use strict;
 
 our @private_attr = qw/ versions /;
@@ -120,6 +121,16 @@ sub get {
   }
   for (@p) {
     for my $e ($_->get_owners) {
+      # kludge - figure this out
+      try {
+        if (ref($e->[0]) =~ /Edge$/) {
+          $e->[0]->triplet;
+        }
+      } catch {
+        INFO ref($self)."::get - KLUDGE EXECUTED";
+        $e->[0]->get(1);
+        1;
+      };
       my $pfx = (ref($e->[0]) =~ /Node$/ ? $e->[0]->handle :
                  $e->[0]->triplet);
       $self->{_props}{join(':',$pfx,$_->handle)} = $_;

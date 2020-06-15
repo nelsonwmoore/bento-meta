@@ -2,7 +2,7 @@ use Test::More;
 use lib qw'../lib ..';
 use Bento::Meta::Model;
 
-$DOCKER=0;
+$DOCKER=1;
 my $docker;
 
 if ($DOCKER) {
@@ -22,13 +22,15 @@ if ($DOCKER) {
   }
 }
 
+my @o;
+
 $Bento::Meta::Model::Entity::VERSIONING_ON=1;
 $Bento::Meta::Model::Entity::VERSION_COUNT=1;
 
 ok $n1 = Bento::Meta::Model::Node->new({handle=>'n1'}), 'n1';
 ok $p1 = Bento::Meta::Model::Property->new({handle=>'p1'}), 'p1';
 ok $v1 = Bento::Meta::Model::ValueSet->new({handle=>'v1', id=>'blarf'}), 'v1';
-
+push @o, $n1, $p1, $v1;
 
 ok $n1->set_props(p1 => $p1), 'n1 -> p1';
 ok $p1->set_value_set($v1), 'n1 -> p1 -> v1';
@@ -55,6 +57,7 @@ ok !owns($n1, $p1->_prev, 'props', 'p1'), 'new n1 does not own old p1';
 $Bento::Meta::Model::Entity::VERSION_COUNT=3;
 
 ok $p2 = Bento::Meta::Model::Property->new({handle=>'p2'}), 'p2';
+push @o, $p2;
 ok $n1->set_props('p2' => $p2), "add p2 to n1";
 
 isnt ref $n1->_prev->_prev, 'SCALAR', 'n1 now has 3 versions';
@@ -66,8 +69,15 @@ ok owns($n1, $p2, 'props', 'p2'), "new n1 owns p2";
 ok owns($n1, $p1, 'props', 'p1'), "new n1 owns p1";
 ok !$n1->_prev->props('p2'), "but old n1 has no p2";
 
+$Bento::Meta::Model::Entity::VERSION_COUNT=4;
+
+ok $p3 = Bento::Meta::Model::Property->new({handle=>'p3'}), 'p3';
+push @o, $p3;
+
+$n1->set_props('p3' => $p3);
+
 if ($DOCKER) {
-  for $o ($n1, $p1, $v1, $p2) {
+  for $o (@o) {
     $thing = $o;
     while (ref $thing ne 'SCALAR') {
       $thing->put;

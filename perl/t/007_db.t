@@ -58,7 +58,7 @@ SKIP : {
   is scalar @p, 3, "has 3 properties";
   is $node->props('site_short_name')->dirty, -1, "prop dirty with -1";
   is $node->props('site_short_name')->model, "ICDC", "attr of prop";
-  ok scalar $node->get_owners, 1, 'get_owners runs';
+  is scalar $node->get_owners, 1, 'get_owners runs';
 
     
   diag "test put()";

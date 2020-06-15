@@ -7,7 +7,7 @@ use Bento::Meta::Model;
 use Neo4j::Bolt;
 use strict;
 
-Log::Log4perl->easy_init($INFO);
+Log::Log4perl->easy_init($WARN);
 our $B = 'Bento::Meta::Model';
 our $N = "${B}::Node";
 our $E = "${B}::Edge";
@@ -18,7 +18,7 @@ our $P = "${B}::Property";
 unless (eval 'require t::NeoCon; 1') {
   plan skip_all => "Docker not available for test database setup: skipping.";
 }
-$DB::single=1;
+
 my $docker = t::NeoCon->new(tag => 'maj1/test-plain-db-bento-meta');
 $docker->start;
 my $port = $docker->port(7687);
@@ -56,8 +56,12 @@ ok $model->add_prop( $n2 => $p1 );
 ok $model->add_prop( $n2 => $p2 );
 ok $model->add_prop( $n2 => $p3 );
 
-ok $model->put;
+#ok $model->put,'put';
 $DB::single=1;
+diag "http://localhost:".$docker->port(7474);
+diag "bolt://localhost:$port";
+
+
 1;
 
 #         r1       r21
@@ -77,7 +81,7 @@ ok $model->add_node($n21);
 ok $model->add_edge($r21);
 ok $model->add_prop( $n21 => $p21 );
 
-ok $model->put;
+#ok $model->put, 'put';
 $DB::single=1;
 1;
 
@@ -111,7 +115,11 @@ my $prev = $n1->_prev;
 ok $n1->set_model('test2'), "change another attr (shouldn't dup)";
 is $n1->_prev, $prev, "didn't dup";
 is $prev->_next, $n1, "yep";
-ok $model->put;
+
+# how about the owner, r1
+is $r1->_prev->src, $n1->_prev, "old r1 points to old n1";
+
+#ok $model->put, 'put';
 $DB::single=1;
 1;
 
@@ -125,18 +133,34 @@ is $model->version_count(4), 4, "bump version count";
 
 my ($p41);
 
-ok $p41 = $P->new({handle=>'p41'});
+# why does adding a new property to node generate dups of all of the
+# previously attached properties??
+
+ok $p41 = $P->new({handle=>'p41'}), 'make p41';
+$DB::single =1;
 ok $model->add_prop($n2 => $p41), "add p41 to n2 (generates dup)";
 ok $n2->_prev, "yep";
+$DB::single=1;
+is $r1->dst, $n2, "current r1 points to current n2";
+is $r1->_prev->dst, $n2->_prev, "old r1 points to old n2 still";
 ok !$n2->_prev->props('p41'), "p41 not on prev n2";
 is $n2->props('p41'),$p41, "on current";
 
-ok $model->put;
+ok $model->put,'put';
 $DB::single=1;
 1;
 
 # match (e) where (e._from <= $V) and (($V < e._to) or (not exists(e._to))) return e;
-# :param V => 4
+# :param V => 1
+
+diag "Access versions";
+
+$DB::single=1;
+ok my $v1 = $model->at_version(1), "v1";
+ok my $v2 = $model->at_version(2), "v2";
+ok my $v3 = $model->at_version(3), "v3";
+ok my $v4 = $model->at_version(4), "v4";
+
 
 
 done_testing;

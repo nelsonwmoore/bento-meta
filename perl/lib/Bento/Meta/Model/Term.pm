@@ -10,6 +10,7 @@ sub new {
     _id => undef,
     _value => undef,
     _origin_id => undef,
+    _origin_version => undef,
     _origin_definition => undef,
     _concept => \undef, # term has_concept concept
     _origin => \undef, # term has_origin origin

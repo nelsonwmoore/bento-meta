@@ -8,6 +8,9 @@ setup(
   url="https://github.com/CBIIT/bento-meta",
   python_requires='>=3.6',
   packages=find_packages(),
+  package_data={
+      "bento_meta.pfb":["avsc/*.avsc"]
+      },
   install_requires=[
     'PyYAML>=5.1.1',
     'option-merge>=1.6',

@@ -7,7 +7,11 @@ use strict;
 use warnings;
 no warnings qw/regexp/;
 
+<<<<<<< HEAD
 our $VERSION = "0.25x";
+=======
+our $VERSION = "0.21";
+>>>>>>> master
 
 our $re_url = qr{^(?:https?|bolt)://};
 

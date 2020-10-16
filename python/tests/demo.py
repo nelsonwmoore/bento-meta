@@ -1,0 +1,12 @@
+  n1=Node({"handle":"n1"})
+  n2=Node({"handle":"n2"})  
+  r1=Edge({"handle":"r1","src":n1,"dst":n2})
+  p1=Property({"handle":"p1"})
+  p2=Property({"handle":"p2"})
+  p3=Property({"handle":"p3"})
+  model.add_node(n1)
+  model.add_node(n2)
+  model.add_edge(r1)
+  for p in [p1,p2,p3]:
+    model.add_prop(n1, p)
+  model.dput()

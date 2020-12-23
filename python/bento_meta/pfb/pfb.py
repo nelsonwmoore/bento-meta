@@ -1,9 +1,7 @@
 # don't forget to
 #  python setup.py develop
 # to get access to avsc/ via pkg_resources
-import sys
 import pkg_resources as pkgr
-import fastavro
 from fastavro.schema import load_schema
 from fastavro.write import writer
 from fastavro.read import reader
@@ -11,6 +9,8 @@ from warnings import warn
 import json
 import tempfile
 import os
+
+from bento_meta.entity import ArgError
 
 from pdb import set_trace
     
@@ -31,6 +31,11 @@ Blah blah blah
 """
         self.model = model
         self.schema = None
+        self.enums = {}
+        self.avsc = {}
+        self.meta = {}
+        self.data = []
+        self.payload = []
         pass
 
     def construct_pfb_schema(self, avro_nodes=[]):
@@ -38,9 +43,11 @@ Blah blah blah
 :param list avro_nodes: List of plain Avro data node schemas
 """
         curdir = os.getcwd()
-        os.chdir( pkgr.resource_filename("bento_meta.pfb.pfb","avsc") )
+        os.chdir( pkgr.resource_filename("bento_meta.pfb","avsc") )
         schema = None
-        
+        enums = {}
+        for k in self.enums:
+            enums["pfb."+k] = self.enums[k]
         with open("pfb.Entity.avsc","r") as Entity:
             # load Entity schema as simple json
             schema_json = json.load( Entity )
@@ -54,11 +61,11 @@ Blah blah blah
                 json.dump(schema_json,tf)
                 tf.seek(0)
                 # load the customized schema
-                schema = load_schema(tf.name)
+                schema = load_schema(tf.name,_named_schemas=enums)
             pass
         os.chdir(curdir)
         self.schema = schema
-        return self
+        return self.schema
 
     def node_to_pfb_meta(self,node):
         """Rewrite a bento_meta Node object as a PFB Metadata component.
@@ -127,7 +134,7 @@ Store Avro schema in PFB object attribute PFB.avsc and return it.
             avs["fields"].append({
                 "default":"null",
                 "name":p.handle,
-                "type": self.value_domain_to_avro_type( node.props[p] )
+                "type": self.value_domain_to_avro_type( p )
                 })
         self.avsc[node.handle] = avs
         return avs
@@ -144,20 +151,22 @@ as the Avro type.
         atype = None
         if not btype:
             atype = "null"
-        if btype in ["string","boolean"]: # direct map
-            atype = type
-        if btype in ["TBD", "url", "datetime"]: # reduced constraint (needs attn)
+        if btype in ["string", "boolean"]:  # direct map
+            atype = btype
+        if btype in ["TBD", "url", "datetime"]:
+            # reduced constraint (needs attn)
             atype = "string"
-        if btype in ['number', 'integer']: # numeric data
+        if btype in ['number', 'integer']:  # numeric data
             atype = 'int' if type == "integer" else "double"
-        if type(btype) is dict: # number_with_units, or regex pattern constraint
+        if type(btype) is dict:  # number_with_units, or regex pattern constraint
             if "pattern" in btype:
                 atype = {
                     "type":"record",
                     "name":"string_for_"+prop.handle,
                     "fields": [
-                        {"name":"value","type":"string"},
-                        {"name":"pattern","type":"string","default":type["pattern"] }
+                        {"name":"value", "type":"string"},
+                        {"name":"pattern", "type":"string",
+                         "default":type["pattern"] }
                     ]}
             elif "units" in btype:
                 value_type = 'int' if btype == "integer" else "double"    
@@ -179,6 +188,7 @@ as the Avro type.
             if vs_name not in self.enums:
                 self.enums[vs_name] = {
                     "type": "enum",
+                    "namespace": "pfb",
                     "name": vs_name,
                     "symbols": [t.value for t in prop.terms.values()]
                     }
@@ -188,11 +198,12 @@ as the Avro type.
     def pfb_metadata_entity_for_nodes(self, nodes=[]):
         self.meta = {}
         for n in nodes:
-            self.node_to_pfb_meta(n) 
+            self.node_to_pfb_meta(n)
+        hndls = [n.handle for n in nodes]
         return {
             "name": "Metadata",
             "misc": {},
-            "nodes": self.meta.values()
+            "nodes": [self.meta[nm] for nm in hndls]
             }
     
     def pfb_schema_for_nodes(self, nodes=[]):
@@ -210,8 +221,10 @@ as the Avro type.
             src,edge,dst = link
             if src not in by_src:
                 by_src[src] = []
-            by_src[src].append[ (edge, dst) ]
+            by_src[src].append( (edge, dst) )
         for node in data_nodes:
+            if not type(node).__name__ in ("neo4j.Graph.Node", "dataNode"):
+                raise TypeError("node must be a neo4j.Graph.Node or a dataNode")
             pfb_entity = {"id":node.id,"object":{},"relations":[]}
             if node.id in node_names:
                 pfb_entity["name"] = node_names[node.id]
@@ -223,8 +236,9 @@ as the Avro type.
                 for edge,dst in by_src[node.id]:
                     pfb_entity["relations"].append(
                         { "dst_name":node_names[dst],
-                              "dst": dst })
+                              "dst_id": dst })
             self.data.append(pfb_entity)
+        return self.data
 
     def write_msg(self, flo,payload):
         """Write a payload of data and metadata as an avro binary message according to the custom PFB schema
@@ -278,3 +292,28 @@ nodes). Data nodes must have types that are represented in the PFB object's mode
         self.pfb_entity_for_data_nodes(data_nodes, node_names, data_links)
         
             
+class dataNode(object):
+    """Simple wrapper to provide attributes to a dict. Quacks like neo4j.Graph.Node."""
+    def __init__(self,init):
+        if not type(init) == dict:
+            raise ArgError("Construct a dataNode with a dict")
+        self.data = init
+        if not self.data.get("id"):
+            self.data["id"] = None
+        if not self.data.get("labels"):
+            self.data["labels"] = []
+    def __getattribute__(self, att):
+        if att == "data":
+            return object.__getattribute__(self,att)
+        else:
+            return self.data[att]
+    def __setattr__(self,att,val):
+        if att == "data":
+            object.__setattr__(self,att,val)
+        else:
+            self.data[att] = val;
+    def __getitem__(self,att):
+        return getattr(self,att)
+    def __iter__(self):
+        props = [k for k in self.data.keys() if not k in ["id","labels"]]
+        return iter(props)

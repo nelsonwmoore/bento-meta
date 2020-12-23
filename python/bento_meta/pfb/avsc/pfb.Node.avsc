@@ -22,14 +22,14 @@
       "name": "links",
       "type": {
 	"type":"array",
-	"items": "pfb.Link"
+	"items": "Link"
       }
     },
     {
       "name": "properties",
       "type": {
         "type": "array",
-        "items": "pfb.Property"
+        "items": "Property"
       }
     }
   ]

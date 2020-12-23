@@ -18,14 +18,14 @@
     {
       "name": "object",
       "type": [
-	"pfb.Metadata"
+	"Metadata"
       ]
     },
     {
       "name": "relations",
       "type": {
 	"type": "array",
-	"items": "pfb.Relation"
+	"items": "Relation"
       },
       "default": []
     }

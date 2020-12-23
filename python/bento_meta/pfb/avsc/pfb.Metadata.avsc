@@ -7,7 +7,7 @@
       "name": "nodes",
       "type": {
 	"type": "array",
-	"items": "pfb.Node"
+	"items": "Node"
       }
     },
     {

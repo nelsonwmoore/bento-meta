@@ -12,15 +12,17 @@ setup(
       "bento_meta.pfb":["avsc/*.avsc"]
       },
   install_requires=[
-    'PyYAML>=5.1.1',
-    'option-merge>=1.6',
-    'neo4j>=4.0',
-    'requests'
+      'PyYAML>=5.1.1',
+      'option-merge>=1.6',
+      'neo4j>=4.0',
+      'requests',
+      'fastavro==1.1.1' # there's an issue with load_schema in 1.2.1
     ],
   tests_require=[
-    'pytest',
-    'docker-compose',
-    'pytest-docker',
-    'requests'
+      'pytest',
+      'docker-compose',
+      'pytest-docker',
+      'fastavro',
+      'requests'
   ]
   )

@@ -179,6 +179,6 @@ Note: This is brittle, since the syntax of MDF is hard-coded into this method.
       return { "value_domain":"value_set",
                "value_set":vs }
     else:
-      return {"value_domain":MDF.default_type}
+      return {"value_domain": typedef if typedef else MDF.default_type}
                              
     

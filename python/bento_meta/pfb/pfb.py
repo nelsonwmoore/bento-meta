@@ -5,6 +5,7 @@ import pkg_resources as pkgr
 from fastavro.schema import load_schema
 from fastavro.write import writer
 from fastavro.read import reader
+from fastavro.validation import validate_many
 from warnings import warn
 import json
 import tempfile
@@ -15,7 +16,7 @@ from bento_meta.entity import ArgError
 from pdb import set_trace
     
 class PFB(object):
-    """PFB schema facilities
+    """PFB serialization facilities for Bento data
 
 Blah blah blah
 """
@@ -39,15 +40,19 @@ Blah blah blah
         pass
 
     def construct_pfb_schema(self, avro_nodes=[]):
-        """Create a PFB schema, including a list of Avro nodes (data node schemas) derived from the model.
+        """Create a PFB Entity schema, including a list of Avro nodes (data node schemas) derived from the model.
 :param list avro_nodes: List of plain Avro data node schemas
 """
         curdir = os.getcwd()
         os.chdir( pkgr.resource_filename("bento_meta.pfb","avsc") )
         schema = None
         enums = {}
+
+        # write the enum schemas to files for recursive loading by load_schema
         for k in self.enums:
-            enums["pfb."+k] = self.enums[k]
+            with open("pfb.{}.avsc".format(k),"w") as ef:
+                json.dump(self.enums[k],ef)
+            
         with open("pfb.Entity.avsc","r") as Entity:
             # load Entity schema as simple json
             schema_json = json.load( Entity )
@@ -61,8 +66,13 @@ Blah blah blah
                 json.dump(schema_json,tf)
                 tf.seek(0)
                 # load the customized schema
-                schema = load_schema(tf.name,_named_schemas=enums)
+                schema = load_schema(tf.name)
             pass
+
+        # done with enum schema files
+        for k in self.enums:
+            os.remove("pfb.{}.avsc".format(k))
+            
         os.chdir(curdir)
         self.schema = schema
         return self.schema
@@ -130,12 +140,16 @@ Store Avro schema in PFB object attribute PFB.avsc and return it.
         avs = { "type":"record", "name":node.handle}
         avs["fields"] = []
         # simple attributes -> PFB fields
+        
         for p in node.props.values():
-            avs["fields"].append({
-                "default":"null",
+            fld_avs = {
                 "name":p.handle,
                 "type": self.value_domain_to_avro_type( p )
-                })
+                }
+            if not p.is_required:
+                fld_avs["type"] = ["null", fld_avs["type"]]
+                fld_avs["default"] = None
+            avs["fields"].append(fld_avs)
         self.avsc[node.handle] = avs
         return avs
 
@@ -162,6 +176,7 @@ as the Avro type.
             if "pattern" in btype:
                 atype = {
                     "type":"record",
+                    "namespace":"pfb",
                     "name":"string_for_"+prop.handle,
                     "fields": [
                         {"name":"value", "type":"string"},
@@ -175,6 +190,7 @@ as the Avro type.
                     en["symbols"].append(u)
                 atype = {
                     "type":"record",
+                    "namespace":"pfb",
                     "name":"number_with_units_for_"+prop.handle,
                     "fields": [
                         {"name":"value", "type":value_type},
@@ -196,15 +212,15 @@ as the Avro type.
         return atype
 
     def pfb_metadata_entity_for_nodes(self, nodes=[]):
-        self.meta = {}
         for n in nodes:
             self.node_to_pfb_meta(n)
         hndls = [n.handle for n in nodes]
-        return {
+        self.meta =  {
             "name": "Metadata",
             "misc": {},
             "nodes": [self.meta[nm] for nm in hndls]
             }
+        return self.meta
     
     def pfb_schema_for_nodes(self, nodes=[]):
         self.avsc = {}
@@ -227,11 +243,12 @@ as the Avro type.
                 raise TypeError("node must be a neo4j.Graph.Node or a dataNode")
             pfb_entity = {"id":node.id,"object":{},"relations":[]}
             if node.id in node_names:
-                pfb_entity["name"] = node_names[node.id]
+                pfb_entity["name"] = "pfb."+node_names[node.id]
             else:
                 raise RuntimeError("node with id {} does not have an associated type name".format(node.id))
+            pfb_entity["object"] = (pfb_entity["name"],{})
             for p in node:
-                pfb_entity["object"][p] = node[p]
+                pfb_entity["object"][1][p] = node[p]
             if node.id in by_src:
                 for edge,dst in by_src[node.id]:
                     pfb_entity["relations"].append(
@@ -240,27 +257,14 @@ as the Avro type.
             self.data.append(pfb_entity)
         return self.data
 
-    def write_msg(self, flo,payload):
-        """Write a payload of data and metadata as an avro binary message according to the custom PFB schema
-:param filelike-object flo: file-like object (write-binary File)
-:param dict payload: dictionary containing data and metadata as required by PFB"""
-        # capture validation?
-        writer(flo, self.schema, payload)
-
-    def read_msg(self,flo):
-        """Read an avro message from a file-like object and return an iterator over records
-:param filelike-object flo: file-like object (read-binary File)"""
-        return reader(flo,self.schema)
-
-    # need methods that will create necessary metadata schema
-    # need to incorporate enumerations of acceptible values
-    
-    def write_data(self, data_nodes, data_links=[], validate=True):
+    def write_data(self, flo, data_nodes, data_links=[], validate=True, **kwargs):
         """Write a PFB message directly from a list of data nodes (not bento-meta 
 nodes). Data nodes must have types that are represented in the PFB object's model.
-:param list data_nodes: list of `neo4j.graph.Node` or dicts representing instances of node data
+:param filelike flo: a file-like object open for binary writing
+:param list data_nodes: list of `neo4j.graph.Node` or `dataNode`
 :param list data_links: list of triples in the form (<node_id>,<edge handle>, <node_id>) linking source to destination data nodes via a model edge
 :param boolean validate: whether to validate the message with fastavro
+:param **kwargs: remaining keyword args are passed to `fastavro.write`
 """
         # steps:
         # collect a list of bento nodes corresponding to the data nodes
@@ -268,6 +272,8 @@ nodes). Data nodes must have types that are represented in the PFB object's mode
         # include self.enums in "the right place" : think about
         # create the payload for writing:
         # - create the Metadata entity with list of bento nodes
+        #   - "id" key : "metadata"
+        #   - "name" key : "metadata"
         # - create the data entity for each data_node
         #   - "object" key = data_node element
         #   - "relations"  key  = data_links with data_node element as source
@@ -290,6 +296,12 @@ nodes). Data nodes must have types that are represented in the PFB object's mode
         self.pfb_metadata_entity_for_nodes(bento_nodes.values())
         self.pfb_schema_for_nodes(bento_nodes.values())
         self.pfb_entity_for_data_nodes(data_nodes, node_names, data_links)
+        self.payload.append(
+            {"id":"_metadata","name":"metadata","object":self.meta})
+        self.payload.extend(self.data)
+        if (validate):
+            validate_many(self.payload,self.schema,raise_errors=True)
+        writer(flo, self.schema, self.payload, **kwargs)
         
             
 class dataNode(object):

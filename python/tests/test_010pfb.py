@@ -1,6 +1,7 @@
 import re
 import sys
 import os
+import io
 import fastavro
 sys.path.extend(['.','..'])
 import pytest
@@ -20,7 +21,33 @@ def sample_model(pytestconfig):
     return MDF(os.path.join(sampdir,"ctdc_model_file.yaml"),
                 os.path.join(sampdir,"ctdc_model_properties_file.yaml"),
                 handle = "CTDC").model
-
+@pytest.fixture
+def sample_data():
+    nodes = { "assignment_report": dataNode({"labels":["assignment_report"],
+                        "id":"n101",
+                        "assignment_report_id":"AR-001",
+                        "assignment_outcome":"OFF_TRIAL",
+                        "analysis_id":"ANAL-001"}),
+              "arm": dataNode({"labels":["arm"],
+                        "id":"n102",
+                        "arm_id": "Z1A",
+                        "arm_drug": "blarfinib",
+                        "arm_target": "BLRF-1"}),
+              "clinical_trial": dataNode({"labels":["clinical_trial"],
+                        "id":"n103",
+                        "clinical_trial_long_name":"BLRF-1 Long Acting Remission Forschung",
+                        "clinical_trial_short_name":"BLARF",
+                        "clinical_trial_type":"fictional",
+                        "principal_investigators":"Arf,B.L.",
+                        "lead_organization":"Blarfzentrum"})}
+    links = [ ("n101", "of_arm", "n102"),
+                   ("n102", "of_trial", "n103")]
+    id_names = { "n101":"assignment_report",
+                 "n102":"arm",
+                 "n103":"clinical_trial" }
+    
+    return (nodes, links, id_names)
+    
 def test_pkg_resource():
     assert pkgr.resource_exists("bento_meta.pfb","avsc")
     assert pkgr.resource_isdir("bento_meta.pfb","avsc")
@@ -91,19 +118,19 @@ def test_node_to_avro_schema(sample_model):
         "name": "metastatic_site",
         "fields": [
             {
-                "default":"null",
+                "default":None,
                 "name":"show_node",
-                "type":"boolean"
+                "type":["null","boolean"]
             },
             {
-                "default":"null",
+                "default":None,
                 "name":"met_site_id",
-                "type":"string"
+                "type":["null","string"]
             },
             {    
-                "default":"null",
+                "default":None,
                 "name":"metastatic_site_name",
-                "type":enum_name
+                "type":["null",enum_name]
             }
             ]
         }
@@ -124,10 +151,12 @@ def test_pfb_schema_for_nodes(sample_model):
     hndls = ["arm","clinical_trial","assignment_report"]
     sc = pfb.pfb_schema_for_nodes( [sample_model.nodes[n] for n in hndls] )
     assert sc
+    enumsc = [ "pfb.{}".format(n) for n in pfb.enums ]
+    expsc = [ "pfb.Entity", "pfb.Metadata", "pfb.Node", "pfb.Link",
+              "pfb.Property", "pfb.Relation" ]
+    expsc.extend(enumsc)
     # all component schemas present
-    assert set([x["name"] for x in sc]) == {
-        "pfb.Entity", "pfb.Metadata", "pfb.Node", "pfb.Link", "pfb.Property",
-        "pfb.Relation" }
+    assert set([x["name"] for x in sc]) == set(expsc)
     ent ,= [x for x in sc if x["name"] =="pfb.Entity"]
     obj ,= [x for x in ent["fields"] if x["name"] == "object"]
     assert type(obj['type']) == list
@@ -138,9 +167,9 @@ def test_pfb_schema_for_nodes(sample_model):
     arm ,= [x for x in custom if x["name"] == "pfb.arm"]
     arm_id_vs ,= [ x["type"] for x in arm["fields"] if x["name"] == "arm_id" ]
     # arm_id value set enum is present
-    assert ent["__named_schemas"][arm_id_vs]
-    assert ent["__named_schemas"][arm_id_vs]["type"] == "enum"
-    assert set(ent["__named_schemas"][arm_id_vs]["symbols"]) > {
+    assert ent["__named_schemas"][arm_id_vs[1]]
+    assert ent["__named_schemas"][arm_id_vs[1]]["type"] == "enum"
+    assert set(ent["__named_schemas"][arm_id_vs[1]]["symbols"]) > {
         "Q","Z1A","G","C2","S1"}
 
 def test_dataNode():
@@ -158,38 +187,71 @@ def test_dataNode():
     assert set( [getattr(dn,i) for i in dn] ) == {"cheep","oink"}
     assert set( [dn[i] for i in dn] ) == {"cheep","oink"}
         
-def test_pfb_entity_for_data_nodes(sample_model):
+def test_pfb_entity_for_data_nodes(sample_model, sample_data):
     # (:assignment_report)-[:of_arm]->(:arm)-[:of_trial]->(:clinical_trial)
     pfb = PFB(sample_model)
+    nodes, links, id_nodes = sample_data
+    data = pfb.pfb_entity_for_data_nodes(nodes.values(), id_nodes, links)
+    assert data
+    datad = {}
+    for datum in data:
+        datad[datum['name']] = datum
+        assert set(datum) == {"id","name", "relations", "object"}
+    
+    ar = datad['pfb.assignment_report']
+    assert ar
+    assert ar["relations"][0] == { "dst_name":"arm", "dst_id":"n102" }
+    assert ar["object"][1]["assignment_outcome"] == "OFF_TRIAL"
+
+def test_data_validation(sample_model,sample_data):
+    pfb = PFB(sample_model)
+    bento_nodes={}
+    nodes, links, ids = sample_data
+    for node in nodes.values():
+        for lbl in node.labels:
+            found=None
+            if (lbl in pfb.model.nodes) and (lbl not in bento_nodes):
+                bento_nodes[lbl] = pfb.model.nodes[lbl]
+                found=1
+                break
+            if not found:
+                raise RuntimeError("node {} with labels {} not found in model".format(node.id,node.labels))
+    pfb.pfb_metadata_entity_for_nodes(bento_nodes.values())
+    pfb.pfb_schema_for_nodes(bento_nodes.values())
+    pfb.pfb_entity_for_data_nodes(nodes.values(), ids, links)
+    assert fastavro.validation.validate_many( pfb.data, pfb.schema )
+    assert fastavro.validation.validate( { "id":"0","name":"metadata",
+                                           "object":pfb.meta},
+                                         pfb.schema)
+    # break validation in an enumerated property
+    pfb.data[1]["object"][1]["arm_id"] = "ZZYXX";
+    with pytest.raises(Exception, match="arm_id is <ZZYXX>.*expected"):
+        fastavro.validation.validate( pfb.data[1],pfb.schema)
+    
+
+def test_write_data(sample_model):
+    pfb = PFB(sample_model)
     nodes = [ dataNode({"labels":["assignment_report"],
-                        "id":101,
+                        "id":"n101",
                         "assignment_report_id":"AR-001",
                         "assignment_outcome":"OFF_TRIAL",
                         "analysis_id":"ANAL-001"}),
               dataNode({"labels":["arm"],
-                        "id":102,
+                        "id":"n102",
                         "arm_id": "Z1A",
                         "arm_drug": "blarfinib",
                         "arm_target": "BLRF-1"}),
               dataNode({"labels":["clinical_trial"],
-                        "id":103,
+                        "id":"n103",
                         "clinical_trial_long_name":"BLRF-1 Long Acting Remission Forschung",
                         "clinical_trial_short_name":"BLARF",
                         "clinical_trial_type":"fictional",
                         "principal_investigators":"Arf,B.L.",
                         "lead_organization":"Blarfzentrum"})]
-    node_names = { 101:"assignment_report",
-                   102:"arm",
-                   103:"clinical_trial" }
-    data_links = [ (101, "of_arm", 102),
-                   (102, "of_trial", 103)]
-    data = pfb.pfb_entity_for_data_nodes(nodes, node_names, data_links)
-    assert data
-    for datum in data:
-        assert set(datum) == {"id","name", "relations", "object"}
-    
-    ar ,= [x for x in data if x["name"] == "assignment_report"]
-    assert ar
-    assert ar["relations"][0] == { "dst_name":"arm", "dst_id":102 }
-    assert ar["object"]["assignment_outcome"] == "OFF_TRIAL"
-    
+    links = [ ("n101", "of_arm", "n102"),
+                   ("n102", "of_trial", "n103")]
+    b = io.BytesIO(b"")
+    pfb.write_data(b,nodes,links)
+    msg = b.getvalue()
+    assert len(msg)
+

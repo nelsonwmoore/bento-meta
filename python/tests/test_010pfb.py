@@ -229,29 +229,17 @@ def test_data_validation(sample_model,sample_data):
         fastavro.validation.validate( pfb.data[1],pfb.schema)
     
 
-def test_write_data(sample_model):
+def test_write_data(sample_model, sample_data):
     pfb = PFB(sample_model)
-    nodes = [ dataNode({"labels":["assignment_report"],
-                        "id":"n101",
-                        "assignment_report_id":"AR-001",
-                        "assignment_outcome":"OFF_TRIAL",
-                        "analysis_id":"ANAL-001"}),
-              dataNode({"labels":["arm"],
-                        "id":"n102",
-                        "arm_id": "Z1A",
-                        "arm_drug": "blarfinib",
-                        "arm_target": "BLRF-1"}),
-              dataNode({"labels":["clinical_trial"],
-                        "id":"n103",
-                        "clinical_trial_long_name":"BLRF-1 Long Acting Remission Forschung",
-                        "clinical_trial_short_name":"BLARF",
-                        "clinical_trial_type":"fictional",
-                        "principal_investigators":"Arf,B.L.",
-                        "lead_organization":"Blarfzentrum"})]
-    links = [ ("n101", "of_arm", "n102"),
-                   ("n102", "of_trial", "n103")]
+    (nodes, links, name) = sample_data
+    nodes = nodes.values()
     b = io.BytesIO(b"")
     pfb.write_data(b,nodes,links)
     msg = b.getvalue()
     assert len(msg)
+
+def test_read_data(sample_model, sample_data):
+    pfb = PFB(sample_model)
+    (nodes, links, name) = sample_data
+    nodes = nodes.values()
 

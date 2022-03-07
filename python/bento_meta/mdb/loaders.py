@@ -11,13 +11,15 @@ from bento_meta.util.cypher.clauses import (
     Statement,
     )
 
+# _commit - the mdf will have been created with a _commit argument
+# flow this down through the model entities.
 
-def load_mdf(mdf, mdb, _commit=None):
+def load_mdf(mdf, mdb):
     """Load an MDF object into an MDB instance"""
-    load_model(mdf.model, mdb, _commit)
+    load_model(mdf.model, mdb)
 
 
-def load_model(model, mdb, _commit=None):
+def load_model(model, mdb):
     """Load a model object into an MDB instance."""
     if not isinstance(mdb, WriteableMDB):
         raise RuntimeError("mdb object must be a WriteableMDB")
@@ -25,7 +27,7 @@ def load_model(model, mdb, _commit=None):
     cNodes = {}
     for nd in model.nodes:
         node = model.nodes[nd]
-        cNode = _cEntity(node, model, _commit)
+        cNode = _cEntity(node, model)
         cStatements.append(
             Statement(
                 Create(cNode)
@@ -35,19 +37,19 @@ def load_model(model, mdb, _commit=None):
         cProps = []
         if node.tags:
             cStatements.extend(
-                _tag_statements(node, cNode, _commit)
+                _tag_statements(node, cNode)
                 )
         if node.props:
             cStatements.extend(
-                _prop_statements(node, cNode, model, _commit)
+                _prop_statements(node, cNode, model)
                 )
     # node nodes and node-property nodes now exist
     # nodes are linked to properties
     for rl in model.edges:
         edge = model.edges[rl]
-        cEdge = _cEntity(edge, model, _commit)
-        cSrc = _cEntity(edge.src, model, _commit)
-        cDst = _cEntity(edge.dst, model, _commit)
+        cEdge = _cEntity(edge, model)
+        cSrc = _cEntity(edge.src, model)
+        cDst = _cEntity(edge.dst, model)
 
         if edge.multiplicity:
             cEdge._add_props({"multiplicity": edge.multiplicity})
@@ -66,11 +68,11 @@ def load_model(model, mdb, _commit=None):
                 )])
         if edge.tags:
             cStatements.extend(
-                _tag_statements(edge, cEdge, _commit)
+                _tag_statements(edge, cEdge)
                 )
         if edge.props:
             cStatements.extend(
-                _prop_statements(edge, cEdge, model, _commit)
+                _prop_statements(edge, cEdge, model)
                 )
     # edge node and edge-property nodes now exist
 
@@ -83,8 +85,8 @@ def load_model(model, mdb, _commit=None):
 
     for pr in [x for x in model.props.values()
                if x.value_domain == 'value_set']:
-        cValueSet = _cEntity(pr.value_set, model, _commit)
-        cProp = _cEntity(pr, model, _commit)
+        cValueSet = _cEntity(pr.value_set, model)
+        cProp = _cEntity(pr, model)
         cStatements.append(
             Statement(
                 Match(cProp),
@@ -92,7 +94,7 @@ def load_model(model, mdb, _commit=None):
                 )
             )
         for tm in pr.terms.values():
-            cTerm = _cEntity(tm, model, _commit)
+            cTerm = _cEntity(tm, model)
             cStatements.append(
                 Statement(
                     Match(cValueSet),
@@ -102,7 +104,7 @@ def load_model(model, mdb, _commit=None):
     return cStatements
 
 
-def _cEntity(ent, model, _commit):
+def _cEntity(ent, model):
     label = type(ent).__name__.lower()
     cEnt = None
     if label == 'edge':
@@ -127,8 +129,8 @@ def _cEntity(ent, model, _commit):
         cEnt = N(label=label,
                  props={"handle": ent.handle,
                         "model": model.handle})
-    if _commit:
-        cEnt._add_props({"_commit": _commit})
+    if ent._commit:
+        cEnt._add_props({"_commit": ent._commit})
     if ent.nanoid:
         cEnt._add_props({"nanoid": ent.nanoid})
     if ent.desc:
@@ -136,7 +138,7 @@ def _cEntity(ent, model, _commit):
     return cEnt
 
 
-def _tag_statements(ent, cEnt, _commit):
+def _tag_statements(ent, cEnt):
     stmts = []
     cTags = []
     if ent.tags:
@@ -144,8 +146,8 @@ def _tag_statements(ent, cEnt, _commit):
             cTag = N(label="tag",
                      props={"key": t.key,
                             "value": t.value})
-            if _commit:
-                cTag._add_props({"_commit": _commit})
+            if t._commit:
+                cTag._add_props({"_commit": t._commit})
             if t.nanoid:
                 cTag._add_props({"nanoid": t.nanoid})
             if t.desc:
@@ -161,10 +163,10 @@ def _tag_statements(ent, cEnt, _commit):
     return stmts
 
 
-def _prop_statements(ent, cEnt, model, _commit):
+def _prop_statements(ent, cEnt, model):
     stmts = []
     for p in ent.props.values():
-        cProp = _cEntity(p, model, _commit)
+        cProp = _cEntity(p, model)
         cProp._add_props({"value_domain": p.value_domain})
         stmts.extend([
             Statement(
@@ -178,6 +180,6 @@ def _prop_statements(ent, cEnt, model, _commit):
             ])
         if p.tags:
             stmts.extend(
-                _tag_statements(p, cProp, _commit)
+                _tag_statements(p, cProp)
                 )
     return stmts
